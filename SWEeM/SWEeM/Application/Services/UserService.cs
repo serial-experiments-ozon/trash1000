@@ -60,6 +60,33 @@ public class UserService(AppDbContext dbContext, IPasswordHasher<User> hasher) :
         return user.ToDto();
     }
 
+    public async Task<UserDto?> ValidateCredentialsAsync(
+        string login,
+        string password,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(login) || string.IsNullOrWhiteSpace(password))
+            return null;
+
+        // Find user by login (case-sensitive or insensitive as needed)
+        var user = await dbContext.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Login == login, cancellationToken);
+
+        if (user == null)
+            return null;
+
+        // Verify password
+        var result = hasher.VerifyHashedPassword(null, user.PasswordHash, password);
+
+        if (result == PasswordVerificationResult.Success)
+        {
+            return new UserDto(user.Id, user.Name, user.Login, user.Role);
+        }
+
+        return null;
+    }
+
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var user = await dbContext.Users.FindAsync(id, cancellationToken);
