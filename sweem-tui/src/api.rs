@@ -2,11 +2,16 @@
 //!
 //! This module provides an async HTTP client for communicating with the backend.
 //! All methods are non-blocking and designed to run in a separate Tokio task.
+//! Supports full CRUD operations for Clients, Projects, and Users.
 
 use anyhow::{Context, Result};
 use reqwest::Client;
+use uuid::Uuid;
 
-use crate::models::{ClientDto, PaginatedResult, ProjectDto, UserDto};
+use crate::models::{
+    ClientDto, CreateClientDto, CreateProjectDto, CreateUserDto, PaginatedResult, ProjectDto,
+    UpdateClientDto, UpdateProjectDto, UpdateUserDto, UserDto,
+};
 
 /// Default API base URL
 pub const DEFAULT_BASE_URL: &str = "http://localhost:5094";
@@ -36,6 +41,10 @@ impl ApiClient {
     pub fn with_default_url() -> Result<Self> {
         Self::new(DEFAULT_BASE_URL)
     }
+
+    // ============================================
+    // Projects CRUD
+    // ============================================
 
     /// Fetch all projects with pagination
     pub async fn fetch_projects(
@@ -88,6 +97,87 @@ impl ApiClient {
         Ok(all_projects)
     }
 
+    /// Create a new project
+    pub async fn create_project(&self, project: &CreateProjectDto) -> Result<Uuid> {
+        let url = format!("{}/projects", self.base_url);
+
+        let response = self
+            .client
+            .post(&url)
+            .json(project)
+            .send()
+            .await
+            .context("Failed to send create project request")?;
+
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "API error: {} - {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            );
+        }
+
+        response
+            .json()
+            .await
+            .context("Failed to parse create project response")
+    }
+
+    /// Update an existing project
+    pub async fn update_project(&self, id: Uuid, project: &UpdateProjectDto) -> Result<ProjectDto> {
+        let url = format!("{}/projects/{}", self.base_url, id);
+
+        let response = self
+            .client
+            .put(&url)
+            .json(project)
+            .send()
+            .await
+            .context("Failed to send update project request")?;
+
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "API error: {} - {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            );
+        }
+
+        response
+            .json()
+            .await
+            .context("Failed to parse update project response")
+    }
+
+    /// Delete a project
+    pub async fn delete_project(&self, id: Uuid) -> Result<Uuid> {
+        let url = format!("{}/projects/{}", self.base_url, id);
+
+        let response = self
+            .client
+            .delete(&url)
+            .send()
+            .await
+            .context("Failed to send delete project request")?;
+
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "API error: {} - {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            );
+        }
+
+        response
+            .json()
+            .await
+            .context("Failed to parse delete project response")
+    }
+
+    // ============================================
+    // Clients CRUD
+    // ============================================
+
     /// Fetch all clients with pagination
     pub async fn fetch_clients(
         &self,
@@ -139,6 +229,87 @@ impl ApiClient {
         Ok(all_clients)
     }
 
+    /// Create a new client
+    pub async fn create_client(&self, client_dto: &CreateClientDto) -> Result<Uuid> {
+        let url = format!("{}/clients", self.base_url);
+
+        let response = self
+            .client
+            .post(&url)
+            .json(client_dto)
+            .send()
+            .await
+            .context("Failed to send create client request")?;
+
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "API error: {} - {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            );
+        }
+
+        response
+            .json()
+            .await
+            .context("Failed to parse create client response")
+    }
+
+    /// Update an existing client
+    pub async fn update_client(&self, id: Uuid, client_dto: &UpdateClientDto) -> Result<ClientDto> {
+        let url = format!("{}/clients/{}", self.base_url, id);
+
+        let response = self
+            .client
+            .put(&url)
+            .json(client_dto)
+            .send()
+            .await
+            .context("Failed to send update client request")?;
+
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "API error: {} - {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            );
+        }
+
+        response
+            .json()
+            .await
+            .context("Failed to parse update client response")
+    }
+
+    /// Delete a client
+    pub async fn delete_client(&self, id: Uuid) -> Result<Uuid> {
+        let url = format!("{}/clients/{}", self.base_url, id);
+
+        let response = self
+            .client
+            .delete(&url)
+            .send()
+            .await
+            .context("Failed to send delete client request")?;
+
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "API error: {} - {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            );
+        }
+
+        response
+            .json()
+            .await
+            .context("Failed to parse delete client response")
+    }
+
+    // ============================================
+    // Users CRUD
+    // ============================================
+
     /// Fetch all users with pagination
     pub async fn fetch_users(&self, page: i32, page_size: i32) -> Result<PaginatedResult<UserDto>> {
         let url = format!(
@@ -186,6 +357,87 @@ impl ApiClient {
         Ok(all_users)
     }
 
+    /// Create a new user
+    pub async fn create_user(&self, user: &CreateUserDto) -> Result<Uuid> {
+        let url = format!("{}/users", self.base_url);
+
+        let response = self
+            .client
+            .post(&url)
+            .json(user)
+            .send()
+            .await
+            .context("Failed to send create user request")?;
+
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "API error: {} - {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            );
+        }
+
+        response
+            .json()
+            .await
+            .context("Failed to parse create user response")
+    }
+
+    /// Update an existing user
+    pub async fn update_user(&self, id: Uuid, user: &UpdateUserDto) -> Result<UserDto> {
+        let url = format!("{}/users/{}", self.base_url, id);
+
+        let response = self
+            .client
+            .put(&url)
+            .json(user)
+            .send()
+            .await
+            .context("Failed to send update user request")?;
+
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "API error: {} - {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            );
+        }
+
+        response
+            .json()
+            .await
+            .context("Failed to parse update user response")
+    }
+
+    /// Delete a user
+    pub async fn delete_user(&self, id: Uuid) -> Result<Uuid> {
+        let url = format!("{}/users/{}", self.base_url, id);
+
+        let response = self
+            .client
+            .delete(&url)
+            .send()
+            .await
+            .context("Failed to send delete user request")?;
+
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "API error: {} - {}",
+                response.status(),
+                response.text().await.unwrap_or_default()
+            );
+        }
+
+        response
+            .json()
+            .await
+            .context("Failed to parse delete user response")
+    }
+
+    // ============================================
+    // Utility
+    // ============================================
+
     /// Health check - attempts to fetch first page of projects
     pub async fn health_check(&self) -> Result<bool> {
         match self.fetch_projects(1, 1).await {
@@ -208,6 +460,30 @@ pub enum ApiMessage {
     Error(String),
     /// API connection status changed
     ConnectionStatus(bool),
+    /// Entity created successfully
+    Created(EntityType, Uuid),
+    /// Entity updated successfully
+    Updated(EntityType),
+    /// Entity deleted successfully
+    Deleted(EntityType, Uuid),
+}
+
+/// Entity types for CRUD operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntityType {
+    Client,
+    Project,
+    User,
+}
+
+impl std::fmt::Display for EntityType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EntityType::Client => write!(f, "Client"),
+            EntityType::Project => write!(f, "Project"),
+            EntityType::User => write!(f, "User"),
+        }
+    }
 }
 
 /// Commands sent from TUI to the API worker
@@ -225,4 +501,23 @@ pub enum ApiCommand {
     CheckConnection,
     /// Shutdown the API worker
     Shutdown,
+    // CRUD Commands
+    /// Create a new client
+    CreateClient(CreateClientDto),
+    /// Update an existing client
+    UpdateClient(Uuid, UpdateClientDto),
+    /// Delete a client
+    DeleteClient(Uuid),
+    /// Create a new project
+    CreateProject(CreateProjectDto),
+    /// Update an existing project
+    UpdateProject(Uuid, UpdateProjectDto),
+    /// Delete a project
+    DeleteProject(Uuid),
+    /// Create a new user
+    CreateUser(CreateUserDto),
+    /// Update an existing user
+    UpdateUser(Uuid, UpdateUserDto),
+    /// Delete a user
+    DeleteUser(Uuid),
 }

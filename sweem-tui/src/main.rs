@@ -1,13 +1,13 @@
-//! SWEeM TUI - A Cyber Command Center for Project Management
+//! SWEeM TUI - Terminal User Interface for SWEeM Project Management
 //!
-//! This is a high-performance, aesthetically stunning TUI (Text User Interface)
-//! for the SWEeM REST API, featuring a horizontal Gantt chart timeline and
-//! animated background effects.
+//! A modern TUI frontend with Kanagawa Dragon theme aesthetic,
+//! featuring floating ash particles and full CRUD operations.
 
 mod api;
 mod app;
 mod models;
 mod particles;
+mod theme;
 mod timeline;
 mod ui;
 
@@ -23,7 +23,7 @@ use crossterm::{
 use ratatui::prelude::*;
 use tokio::sync::mpsc;
 
-use api::{ApiClient, ApiCommand, ApiMessage};
+use api::{ApiClient, ApiCommand, ApiMessage, EntityType};
 use app::App;
 
 /// Frame rate for animations (approximately 30 FPS)
@@ -152,6 +152,99 @@ async fn run_api_worker(
                     ApiCommand::Shutdown => {
                         break;
                     }
+                    // CRUD operations for Clients
+                    ApiCommand::CreateClient(dto) => {
+                        match client.create_client(&dto).await {
+                            Ok(id) => {
+                                tx.send(ApiMessage::Created(EntityType::Client, id)).await.ok();
+                            }
+                            Err(e) => {
+                                tx.send(ApiMessage::Error(format!("Create client failed: {}", e))).await.ok();
+                            }
+                        }
+                    }
+                    ApiCommand::UpdateClient(id, dto) => {
+                        match client.update_client(id, &dto).await {
+                            Ok(_) => {
+                                tx.send(ApiMessage::Updated(EntityType::Client)).await.ok();
+                            }
+                            Err(e) => {
+                                tx.send(ApiMessage::Error(format!("Update client failed: {}", e))).await.ok();
+                            }
+                        }
+                    }
+                    ApiCommand::DeleteClient(id) => {
+                        match client.delete_client(id).await {
+                            Ok(deleted_id) => {
+                                tx.send(ApiMessage::Deleted(EntityType::Client, deleted_id)).await.ok();
+                            }
+                            Err(e) => {
+                                tx.send(ApiMessage::Error(format!("Delete client failed: {}", e))).await.ok();
+                            }
+                        }
+                    }
+                    // CRUD operations for Projects
+                    ApiCommand::CreateProject(dto) => {
+                        match client.create_project(&dto).await {
+                            Ok(id) => {
+                                tx.send(ApiMessage::Created(EntityType::Project, id)).await.ok();
+                            }
+                            Err(e) => {
+                                tx.send(ApiMessage::Error(format!("Create project failed: {}", e))).await.ok();
+                            }
+                        }
+                    }
+                    ApiCommand::UpdateProject(id, dto) => {
+                        match client.update_project(id, &dto).await {
+                            Ok(_) => {
+                                tx.send(ApiMessage::Updated(EntityType::Project)).await.ok();
+                            }
+                            Err(e) => {
+                                tx.send(ApiMessage::Error(format!("Update project failed: {}", e))).await.ok();
+                            }
+                        }
+                    }
+                    ApiCommand::DeleteProject(id) => {
+                        match client.delete_project(id).await {
+                            Ok(deleted_id) => {
+                                tx.send(ApiMessage::Deleted(EntityType::Project, deleted_id)).await.ok();
+                            }
+                            Err(e) => {
+                                tx.send(ApiMessage::Error(format!("Delete project failed: {}", e))).await.ok();
+                            }
+                        }
+                    }
+                    // CRUD operations for Users
+                    ApiCommand::CreateUser(dto) => {
+                        match client.create_user(&dto).await {
+                            Ok(id) => {
+                                tx.send(ApiMessage::Created(EntityType::User, id)).await.ok();
+                            }
+                            Err(e) => {
+                                tx.send(ApiMessage::Error(format!("Create user failed: {}", e))).await.ok();
+                            }
+                        }
+                    }
+                    ApiCommand::UpdateUser(id, dto) => {
+                        match client.update_user(id, &dto).await {
+                            Ok(_) => {
+                                tx.send(ApiMessage::Updated(EntityType::User)).await.ok();
+                            }
+                            Err(e) => {
+                                tx.send(ApiMessage::Error(format!("Update user failed: {}", e))).await.ok();
+                            }
+                        }
+                    }
+                    ApiCommand::DeleteUser(id) => {
+                        match client.delete_user(id).await {
+                            Ok(deleted_id) => {
+                                tx.send(ApiMessage::Deleted(EntityType::User, deleted_id)).await.ok();
+                            }
+                            Err(e) => {
+                                tx.send(ApiMessage::Error(format!("Delete user failed: {}", e))).await.ok();
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -177,7 +270,30 @@ async fn run_event_loop(
 
         // Check for API messages (non-blocking)
         while let Ok(msg) = api_rx.try_recv() {
+            // After CRUD operations, refresh the relevant data
+            let should_refresh = match &msg {
+                ApiMessage::Created(entity_type, _) | ApiMessage::Deleted(entity_type, _) => {
+                    Some(*entity_type)
+                }
+                ApiMessage::Updated(entity_type) => Some(*entity_type),
+                _ => None,
+            };
+
             app.handle_api_message(msg);
+
+            // Trigger data refresh after mutations
+            if let Some(entity_type) = should_refresh {
+                let refresh_cmd = match entity_type {
+                    EntityType::Client => ApiCommand::RefreshClients,
+                    EntityType::Project => ApiCommand::RefreshProjects,
+                    EntityType::User => ApiCommand::RefreshUsers,
+                };
+                cmd_tx.send(refresh_cmd).await.ok();
+                // Also refresh related entities for project dropdown updates
+                if entity_type == EntityType::Client || entity_type == EntityType::User {
+                    cmd_tx.send(ApiCommand::RefreshProjects).await.ok();
+                }
+            }
         }
 
         // Handle input events with timeout for animation

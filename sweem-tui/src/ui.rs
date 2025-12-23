@@ -1,42 +1,31 @@
 //! UI rendering module.
 //!
 //! This module handles all the TUI rendering using ratatui,
-//! implementing the cyber-command center aesthetic.
+//! implementing the Kanagawa Dragon aesthetic with CRUD forms.
 
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Tabs, Wrap},
     Frame,
 };
 
-use crate::app::{App, LogLevel, Tab};
+use crate::app::{App, FormField, FormState, FormType, LogLevel, Tab};
+use crate::models::Role;
 use crate::particles::ParticleWidget;
+use crate::theme::{colors, styles};
 use crate::timeline::{TimelineStatusWidget, TimelineWidget};
-
-/// Neon color palette
-pub mod colors {
-    use ratatui::style::Color;
-
-    pub const BG_DARK: Color = Color::Rgb(10, 10, 20);
-    pub const BG_MEDIUM: Color = Color::Rgb(20, 20, 35);
-    pub const BORDER: Color = Color::Rgb(0, 200, 200);
-    pub const BORDER_DIM: Color = Color::Rgb(50, 100, 100);
-    pub const CYAN: Color = Color::Rgb(0, 255, 255);
-    pub const MAGENTA: Color = Color::Rgb(255, 0, 255);
-    pub const GREEN: Color = Color::Rgb(0, 255, 128);
-    pub const YELLOW: Color = Color::Rgb(255, 255, 0);
-    pub const RED: Color = Color::Rgb(255, 50, 50);
-    pub const TEXT: Color = Color::Rgb(200, 200, 200);
-    pub const TEXT_DIM: Color = Color::Rgb(100, 100, 100);
-}
 
 /// Render the entire UI
 pub fn render(frame: &mut Frame, app: &App) {
     let area = frame.area();
 
-    // Render background particles first
+    // Fill background with theme color
+    let bg_block = Block::default().style(Style::default().bg(colors::BG_DARK));
+    frame.render_widget(bg_block, area);
+
+    // Render background particles
     frame.render_widget(ParticleWidget::new(&app.particle_system), area);
 
     // Create main layout
@@ -54,7 +43,15 @@ pub fn render(frame: &mut Frame, app: &App) {
     render_main_content(frame, app, chunks[1]);
     render_logs(frame, app, chunks[2]);
 
-    // Render overlays (error popup, help)
+    // Render overlays (modals, dialogs)
+    if app.form_state.is_some() {
+        render_form_modal(frame, app, area);
+    }
+
+    if app.confirm_dialog.is_some() {
+        render_confirm_dialog(frame, app, area);
+    }
+
     if app.error_popup.is_some() {
         render_error_popup(frame, app, area);
     }
@@ -70,11 +67,9 @@ fn render_tabs(frame: &mut Frame, app: &App, area: Rect) {
         .iter()
         .map(|tab| {
             let style = if *tab == app.active_tab {
-                Style::default()
-                    .fg(colors::CYAN)
-                    .add_modifier(Modifier::BOLD)
+                styles::tab_active()
             } else {
-                Style::default().fg(colors::TEXT_DIM)
+                styles::tab_inactive()
             };
             Line::from(Span::styled(format!(" {} ", tab.name()), style))
         })
@@ -83,10 +78,10 @@ fn render_tabs(frame: &mut Frame, app: &App, area: Rect) {
     let tabs = Tabs::new(titles)
         .block(
             Block::default()
-                .title(" SWEeM Cyber Command ")
-                .title_style(Style::default().fg(colors::MAGENTA).add_modifier(Modifier::BOLD))
+                .title(" SWEeM Management Console ")
+                .title_style(styles::title())
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors::BORDER))
+                .border_style(styles::border())
                 .style(Style::default().bg(colors::BG_MEDIUM)),
         )
         .select(match app.active_tab {
@@ -94,9 +89,9 @@ fn render_tabs(frame: &mut Frame, app: &App, area: Rect) {
             Tab::Timeline => 1,
             Tab::Users => 2,
         })
-        .style(Style::default().fg(colors::TEXT))
-        .highlight_style(Style::default().fg(colors::CYAN).add_modifier(Modifier::BOLD))
-        .divider(Span::styled(" │ ", Style::default().fg(colors::BORDER_DIM)));
+        .style(styles::text())
+        .highlight_style(styles::tab_active())
+        .divider(Span::styled(" | ", styles::border_dim()));
 
     frame.render_widget(tabs, area);
 }
@@ -136,11 +131,11 @@ fn render_clients_view(frame: &mut Frame, app: &App, area: Rect) {
             let is_selected = i == app.list_selected;
             let style = if is_selected {
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(colors::CYAN)
+                    .fg(colors::BG_DARK)
+                    .bg(colors::BLUE)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(colors::TEXT)
+                styles::text()
             };
 
             let content = Line::from(vec![
@@ -148,15 +143,15 @@ fn render_clients_view(frame: &mut Frame, app: &App, area: Rect) {
                     format!("{:20}", client.display_name()),
                     style,
                 ),
-                Span::styled(" │ ", Style::default().fg(colors::BORDER_DIM)),
+                Span::styled(" | ", styles::border_dim()),
                 Span::styled(
                     format!("{:30}", client.address.as_deref().unwrap_or("-")),
-                    style.fg(if is_selected { Color::Black } else { colors::TEXT_DIM }),
+                    if is_selected { style } else { styles::text_dim() },
                 ),
-                Span::styled(" │ ", Style::default().fg(colors::BORDER_DIM)),
+                Span::styled(" | ", styles::border_dim()),
                 Span::styled(
                     format!("Projects: {}/{}", client.projects_completed, client.projects_total),
-                    style.fg(if is_selected { Color::Black } else { colors::GREEN }),
+                    if is_selected { style } else { styles::success() },
                 ),
             ]);
 
@@ -168,12 +163,12 @@ fn render_clients_view(frame: &mut Frame, app: &App, area: Rect) {
         .block(
             Block::default()
                 .title(" Clients ")
-                .title_style(Style::default().fg(colors::CYAN).add_modifier(Modifier::BOLD))
+                .title_style(styles::title_accent())
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors::BORDER))
+                .border_style(styles::border())
                 .style(Style::default().bg(colors::BG_DARK)),
         )
-        .style(Style::default());
+        .style(styles::text());
 
     frame.render_widget(list, area);
 
@@ -193,16 +188,16 @@ fn render_users_view(frame: &mut Frame, app: &App, area: Rect) {
             let is_selected = i == app.list_selected;
             let style = if is_selected {
                 Style::default()
-                    .fg(Color::Black)
-                    .bg(colors::MAGENTA)
+                    .fg(colors::BG_DARK)
+                    .bg(colors::PURPLE)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(colors::TEXT)
+                styles::text()
             };
 
             let role_color = match user.role {
-                crate::models::Role::Admin => colors::YELLOW,
-                crate::models::Role::User => colors::GREEN,
+                Role::Admin => colors::YELLOW,
+                Role::Manager => colors::GREEN,
             };
 
             let content = Line::from(vec![
@@ -210,15 +205,15 @@ fn render_users_view(frame: &mut Frame, app: &App, area: Rect) {
                     format!("{:20}", user.display_name()),
                     style,
                 ),
-                Span::styled(" │ ", Style::default().fg(colors::BORDER_DIM)),
+                Span::styled(" | ", styles::border_dim()),
                 Span::styled(
                     format!("{:20}", user.login.as_deref().unwrap_or("-")),
-                    style.fg(if is_selected { Color::Black } else { colors::TEXT_DIM }),
+                    if is_selected { style } else { styles::text_dim() },
                 ),
-                Span::styled(" │ ", Style::default().fg(colors::BORDER_DIM)),
+                Span::styled(" | ", styles::border_dim()),
                 Span::styled(
                     format!("{:10}", user.role),
-                    style.fg(if is_selected { Color::Black } else { role_color }),
+                    if is_selected { style } else { Style::default().fg(role_color) },
                 ),
             ]);
 
@@ -230,12 +225,12 @@ fn render_users_view(frame: &mut Frame, app: &App, area: Rect) {
         .block(
             Block::default()
                 .title(" Users ")
-                .title_style(Style::default().fg(colors::MAGENTA).add_modifier(Modifier::BOLD))
+                .title_style(styles::title_accent())
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors::BORDER))
+                .border_style(styles::border())
                 .style(Style::default().bg(colors::BG_DARK)),
         )
-        .style(Style::default());
+        .style(styles::text());
 
     frame.render_widget(list, area);
 
@@ -254,15 +249,15 @@ fn render_logs(frame: &mut Frame, app: &App, area: Rect) {
         .take(area.height.saturating_sub(2) as usize)
         .map(|entry| {
             let (prefix, color) = match entry.level {
-                LogLevel::Info => ("ℹ", colors::CYAN),
-                LogLevel::Success => ("✓", colors::GREEN),
-                LogLevel::Warning => ("⚠", colors::YELLOW),
-                LogLevel::Error => ("✗", colors::RED),
+                LogLevel::Info => ("i", colors::BLUE),
+                LogLevel::Success => ("+", colors::GREEN),
+                LogLevel::Warning => ("!", colors::YELLOW),
+                LogLevel::Error => ("x", colors::RED),
             };
 
             ListItem::new(Line::from(vec![
-                Span::styled(format!("{} ", prefix), Style::default().fg(color)),
-                Span::styled(&entry.message, Style::default().fg(colors::TEXT_DIM)),
+                Span::styled(format!("[{}] ", prefix), Style::default().fg(color)),
+                Span::styled(&entry.message, styles::text_dim()),
             ]))
         })
         .collect();
@@ -271,9 +266,9 @@ fn render_logs(frame: &mut Frame, app: &App, area: Rect) {
         .block(
             Block::default()
                 .title(" System Log ")
-                .title_style(Style::default().fg(colors::GREEN))
+                .title_style(Style::default().fg(colors::FG_DIM))
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors::BORDER_DIM))
+                .border_style(styles::border_dim())
                 .style(Style::default().bg(colors::BG_DARK)),
         );
 
@@ -289,8 +284,8 @@ fn render_empty_state(frame: &mut Frame, area: Rect, message: &str, is_loading: 
     };
 
     let paragraph = Paragraph::new(text)
-        .style(Style::default().fg(colors::TEXT_DIM))
-        .alignment(ratatui::layout::Alignment::Center);
+        .style(styles::text_dim())
+        .alignment(Alignment::Center);
 
     // Center the message
     let inner = Block::default().borders(Borders::ALL).inner(area);
@@ -298,6 +293,454 @@ fn render_empty_state(frame: &mut Frame, area: Rect, message: &str, is_loading: 
     let centered = Rect::new(inner.x, y, inner.width, 1);
 
     frame.render_widget(paragraph, centered);
+}
+
+/// Render the form modal
+fn render_form_modal(frame: &mut Frame, app: &App, area: Rect) {
+    let form = match &app.form_state {
+        Some(f) => f,
+        None => return,
+    };
+
+    // Determine form size based on type
+    let (popup_width, popup_height) = match form.form_type {
+        FormType::CreateClient | FormType::EditClient(_) => (50, 12),
+        FormType::CreateProject | FormType::EditProject(_) => (55, 18),
+        FormType::CreateUser | FormType::EditUser(_) => (50, 16),
+    };
+
+    let popup_area = centered_rect(popup_width, popup_height, area);
+
+    // Dim background
+    frame.render_widget(Clear, popup_area);
+
+    // Form title
+    let title = match &form.form_type {
+        FormType::CreateClient => " New Client ",
+        FormType::EditClient(_) => " Edit Client ",
+        FormType::CreateProject => " New Project ",
+        FormType::EditProject(_) => " Edit Project ",
+        FormType::CreateUser => " New User ",
+        FormType::EditUser(_) => " Edit User ",
+    };
+
+    let block = Block::default()
+        .title(title)
+        .title_style(styles::title())
+        .borders(Borders::ALL)
+        .border_style(styles::border_focused())
+        .style(Style::default().bg(colors::BG_MEDIUM));
+
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    // Render form fields
+    match &form.form_type {
+        FormType::CreateClient | FormType::EditClient(_) => {
+            render_client_form(frame, form, inner);
+        }
+        FormType::CreateProject | FormType::EditProject(_) => {
+            render_project_form(frame, form, app, inner);
+        }
+        FormType::CreateUser | FormType::EditUser(_) => {
+            render_user_form(frame, form, inner);
+        }
+    }
+
+    // Render error message if any
+    if let Some(ref error) = form.error {
+        let error_area = Rect::new(inner.x, inner.y + inner.height - 2, inner.width, 1);
+        let error_text = Paragraph::new(error.as_str())
+            .style(styles::error())
+            .alignment(Alignment::Center);
+        frame.render_widget(error_text, error_area);
+    }
+}
+
+/// Render client form fields
+fn render_client_form(frame: &mut Frame, form: &FormState, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Name
+            Constraint::Length(3), // Address
+            Constraint::Length(1), // Spacer
+            Constraint::Length(1), // Buttons
+        ])
+        .margin(1)
+        .split(area);
+
+    // Name field
+    render_text_field(
+        frame,
+        "Name:",
+        &form.client_name,
+        form.current_field() == FormField::ClientName,
+        false,
+        chunks[0],
+    );
+
+    // Address field
+    render_text_field(
+        frame,
+        "Address:",
+        &form.client_address,
+        form.current_field() == FormField::ClientAddress,
+        false,
+        chunks[1],
+    );
+
+    // Buttons
+    render_form_buttons(
+        frame,
+        form.current_field() == FormField::SubmitButton,
+        form.current_field() == FormField::CancelButton,
+        chunks[3],
+    );
+}
+
+/// Render project form fields
+fn render_project_form(frame: &mut Frame, form: &FormState, app: &App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Name
+            Constraint::Length(3), // Client
+            Constraint::Length(3), // Manager
+            Constraint::Length(3), // Start Date
+            Constraint::Length(3), // End Date
+            Constraint::Length(1), // Spacer
+            Constraint::Length(1), // Buttons
+        ])
+        .margin(1)
+        .split(area);
+
+    // Name field
+    render_text_field(
+        frame,
+        "Name:",
+        &form.project_name,
+        form.current_field() == FormField::ProjectName,
+        false,
+        chunks[0],
+    );
+
+    // Client selector
+    let client_name = app.clients
+        .get(form.project_client_idx)
+        .map(|c| c.display_name().to_string())
+        .unwrap_or_else(|| "(Select client)".to_string());
+    render_selector_field(
+        frame,
+        "Client:",
+        &client_name,
+        form.current_field() == FormField::ProjectClient,
+        chunks[1],
+    );
+
+    // Manager selector
+    let manager_name = app.users
+        .get(form.project_manager_idx)
+        .map(|u| u.display_name().to_string())
+        .unwrap_or_else(|| "(Select manager)".to_string());
+    render_selector_field(
+        frame,
+        "Manager:",
+        &manager_name,
+        form.current_field() == FormField::ProjectManager,
+        chunks[2],
+    );
+
+    // Start Date field
+    render_text_field(
+        frame,
+        "Start Date:",
+        &form.project_start_date,
+        form.current_field() == FormField::ProjectStartDate,
+        false,
+        chunks[3],
+    );
+
+    // End Date field
+    render_text_field(
+        frame,
+        "End Date:",
+        &form.project_end_date,
+        form.current_field() == FormField::ProjectEndDate,
+        false,
+        chunks[4],
+    );
+
+    // Buttons
+    render_form_buttons(
+        frame,
+        form.current_field() == FormField::SubmitButton,
+        form.current_field() == FormField::CancelButton,
+        chunks[6],
+    );
+}
+
+/// Render user form fields
+fn render_user_form(frame: &mut Frame, form: &FormState, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Name
+            Constraint::Length(3), // Login
+            Constraint::Length(3), // Password
+            Constraint::Length(3), // Role
+            Constraint::Length(1), // Spacer
+            Constraint::Length(1), // Buttons
+        ])
+        .margin(1)
+        .split(area);
+
+    // Name field
+    render_text_field(
+        frame,
+        "Name:",
+        &form.user_name,
+        form.current_field() == FormField::UserName,
+        false,
+        chunks[0],
+    );
+
+    // Login field
+    render_text_field(
+        frame,
+        "Login:",
+        &form.user_login,
+        form.current_field() == FormField::UserLogin,
+        false,
+        chunks[1],
+    );
+
+    // Password field (masked)
+    render_text_field(
+        frame,
+        "Password:",
+        &form.user_password,
+        form.current_field() == FormField::UserPassword,
+        true,
+        chunks[2],
+    );
+
+    // Role selector
+    render_selector_field(
+        frame,
+        "Role:",
+        &form.user_role.to_string(),
+        form.current_field() == FormField::UserRole,
+        chunks[3],
+    );
+
+    // Buttons
+    render_form_buttons(
+        frame,
+        form.current_field() == FormField::SubmitButton,
+        form.current_field() == FormField::CancelButton,
+        chunks[5],
+    );
+}
+
+/// Render a text input field
+fn render_text_field(
+    frame: &mut Frame,
+    label: &str,
+    value: &str,
+    is_focused: bool,
+    is_password: bool,
+    area: Rect,
+) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(12), Constraint::Min(10)])
+        .split(area);
+
+    // Label
+    let label_text = Paragraph::new(label)
+        .style(styles::form_label())
+        .alignment(Alignment::Right);
+    frame.render_widget(label_text, chunks[0]);
+
+    // Input field
+    let display_value = if is_password {
+        "*".repeat(value.len())
+    } else {
+        value.to_string()
+    };
+
+    let input_style = if is_focused {
+        styles::form_input_focused()
+    } else {
+        styles::form_input()
+    };
+
+    let cursor = if is_focused { "_" } else { "" };
+    let input = Paragraph::new(format!(" {}{}", display_value, cursor))
+        .style(input_style)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(if is_focused {
+                    styles::border_focused()
+                } else {
+                    styles::border_dim()
+                }),
+        );
+    frame.render_widget(input, chunks[1]);
+}
+
+/// Render a selector/dropdown field
+fn render_selector_field(
+    frame: &mut Frame,
+    label: &str,
+    value: &str,
+    is_focused: bool,
+    area: Rect,
+) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(12), Constraint::Min(10)])
+        .split(area);
+
+    // Label
+    let label_text = Paragraph::new(label)
+        .style(styles::form_label())
+        .alignment(Alignment::Right);
+    frame.render_widget(label_text, chunks[0]);
+
+    // Selector display
+    let input_style = if is_focused {
+        styles::form_input_focused()
+    } else {
+        styles::form_input()
+    };
+
+    let arrows = if is_focused { " [Up/Down]" } else { "" };
+    let input = Paragraph::new(format!(" {}{}", value, arrows))
+        .style(input_style)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(if is_focused {
+                    styles::border_focused()
+                } else {
+                    styles::border_dim()
+                }),
+        );
+    frame.render_widget(input, chunks[1]);
+}
+
+/// Render form buttons
+fn render_form_buttons(
+    frame: &mut Frame,
+    save_focused: bool,
+    cancel_focused: bool,
+    area: Rect,
+) {
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(30),
+            Constraint::Length(12),
+            Constraint::Length(2),
+            Constraint::Length(12),
+            Constraint::Percentage(30),
+        ])
+        .split(area);
+
+    // Save button
+    let save_style = if save_focused {
+        styles::button_focused()
+    } else {
+        styles::button()
+    };
+    let save_btn = Paragraph::new("  [ Save ]  ")
+        .style(save_style)
+        .alignment(Alignment::Center);
+    frame.render_widget(save_btn, chunks[1]);
+
+    // Cancel button
+    let cancel_style = if cancel_focused {
+        styles::button_danger()
+    } else {
+        styles::button()
+    };
+    let cancel_btn = Paragraph::new(" [ Cancel ] ")
+        .style(cancel_style)
+        .alignment(Alignment::Center);
+    frame.render_widget(cancel_btn, chunks[3]);
+}
+
+/// Render confirmation dialog
+fn render_confirm_dialog(frame: &mut Frame, app: &App, area: Rect) {
+    let dialog = match &app.confirm_dialog {
+        Some(d) => d,
+        None => return,
+    };
+
+    let popup_area = centered_rect(45, 10, area);
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .title(format!(" {} ", dialog.title))
+        .title_style(Style::default().fg(colors::RED).add_modifier(Modifier::BOLD))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(colors::RED))
+        .style(Style::default().bg(colors::BG_MEDIUM));
+
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Min(3),    // Message
+            Constraint::Length(1), // Spacer
+            Constraint::Length(1), // Buttons
+        ])
+        .margin(1)
+        .split(inner);
+
+    // Message
+    let message = Paragraph::new(dialog.message.as_str())
+        .style(styles::text())
+        .wrap(Wrap { trim: true })
+        .alignment(Alignment::Center);
+    frame.render_widget(message, chunks[0]);
+
+    // Buttons
+    let button_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(25),
+            Constraint::Length(10),
+            Constraint::Percentage(10),
+            Constraint::Length(10),
+            Constraint::Percentage(25),
+        ])
+        .split(chunks[2]);
+
+    let no_style = if !dialog.yes_focused {
+        styles::button_focused()
+    } else {
+        styles::button()
+    };
+    let no_btn = Paragraph::new("  [ No ]  ")
+        .style(no_style)
+        .alignment(Alignment::Center);
+    frame.render_widget(no_btn, button_chunks[1]);
+
+    let yes_style = if dialog.yes_focused {
+        styles::button_danger()
+    } else {
+        styles::button()
+    };
+    let yes_btn = Paragraph::new(" [ Yes ]  ")
+        .style(yes_style)
+        .alignment(Alignment::Center);
+    frame.render_widget(yes_btn, button_chunks[3]);
 }
 
 /// Render error popup
@@ -323,21 +766,21 @@ fn render_error_popup(frame: &mut Frame, app: &App, area: Rect) {
         )
         .borders(Borders::ALL)
         .border_style(Style::default().fg(colors::RED))
-        .style(Style::default().bg(Color::Rgb(40, 10, 10)));
+        .style(Style::default().bg(Color::Rgb(0x2A, 0x18, 0x18)));
 
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
     let text = Paragraph::new(popup.message.as_str())
-        .style(Style::default().fg(colors::TEXT))
+        .style(styles::text())
         .wrap(Wrap { trim: true });
 
     frame.render_widget(text, inner);
 
     // Dismiss hint
     let hint = Paragraph::new("Press ESC or ENTER to dismiss")
-        .style(Style::default().fg(colors::TEXT_DIM))
-        .alignment(ratatui::layout::Alignment::Center);
+        .style(styles::text_hint())
+        .alignment(Alignment::Center);
 
     let hint_area = Rect::new(
         popup_area.x,
@@ -350,8 +793,8 @@ fn render_error_popup(frame: &mut Frame, app: &App, area: Rect) {
 
 /// Render help overlay
 fn render_help_overlay(frame: &mut Frame, area: Rect) {
-    let popup_width = 50;
-    let popup_height = 18;
+    let popup_width = 55;
+    let popup_height = 22;
     let popup_area = centered_rect(popup_width, popup_height, area);
 
     frame.render_widget(Clear, popup_area);
@@ -360,51 +803,67 @@ fn render_help_overlay(frame: &mut Frame, area: Rect) {
         Line::from(Span::styled(
             "Keyboard Shortcuts",
             Style::default()
-                .fg(colors::CYAN)
+                .fg(colors::BLUE)
                 .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(vec![
-            Span::styled("Navigation", Style::default().fg(colors::MAGENTA).add_modifier(Modifier::BOLD)),
+            Span::styled("Navigation", Style::default().fg(colors::PURPLE).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(vec![
-            Span::styled("  Tab/Shift+Tab ", Style::default().fg(colors::CYAN)),
+            Span::styled("  Tab/Shift+Tab ", Style::default().fg(colors::BLUE)),
             Span::raw("Switch tabs"),
         ]),
         Line::from(vec![
-            Span::styled("  j/k or ↑/↓    ", Style::default().fg(colors::CYAN)),
+            Span::styled("  j/k or Up/Down", Style::default().fg(colors::BLUE)),
             Span::raw("Move up/down"),
         ]),
         Line::from(vec![
-            Span::styled("  h/l or ←/→    ", Style::default().fg(colors::CYAN)),
+            Span::styled("  h/l or Left/Right", Style::default().fg(colors::BLUE)),
             Span::raw("Scroll timeline"),
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("Timeline", Style::default().fg(colors::MAGENTA).add_modifier(Modifier::BOLD)),
+            Span::styled("CRUD Operations", Style::default().fg(colors::PURPLE).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(vec![
-            Span::styled("  +/-           ", Style::default().fg(colors::CYAN)),
+            Span::styled("  c             ", Style::default().fg(colors::BLUE)),
+            Span::raw("Create new item"),
+        ]),
+        Line::from(vec![
+            Span::styled("  e             ", Style::default().fg(colors::BLUE)),
+            Span::raw("Edit selected item"),
+        ]),
+        Line::from(vec![
+            Span::styled("  d / Delete    ", Style::default().fg(colors::BLUE)),
+            Span::raw("Delete selected item"),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("Timeline", Style::default().fg(colors::PURPLE).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(vec![
+            Span::styled("  +/-           ", Style::default().fg(colors::BLUE)),
             Span::raw("Zoom in/out"),
         ]),
         Line::from(vec![
-            Span::styled("  t             ", Style::default().fg(colors::CYAN)),
+            Span::styled("  t             ", Style::default().fg(colors::BLUE)),
             Span::raw("Center on today"),
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("General", Style::default().fg(colors::MAGENTA).add_modifier(Modifier::BOLD)),
+            Span::styled("General", Style::default().fg(colors::PURPLE).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(vec![
-            Span::styled("  r             ", Style::default().fg(colors::CYAN)),
+            Span::styled("  r             ", Style::default().fg(colors::BLUE)),
             Span::raw("Refresh data"),
         ]),
         Line::from(vec![
-            Span::styled("  p             ", Style::default().fg(colors::CYAN)),
+            Span::styled("  p             ", Style::default().fg(colors::BLUE)),
             Span::raw("Toggle particles"),
         ]),
         Line::from(vec![
-            Span::styled("  q/Ctrl+C      ", Style::default().fg(colors::CYAN)),
+            Span::styled("  q/Ctrl+C      ", Style::default().fg(colors::BLUE)),
             Span::raw("Quit"),
         ]),
     ];
@@ -413,12 +872,12 @@ fn render_help_overlay(frame: &mut Frame, area: Rect) {
         .block(
             Block::default()
                 .title(" Help ")
-                .title_style(Style::default().fg(colors::GREEN).add_modifier(Modifier::BOLD))
+                .title_style(styles::title())
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors::BORDER))
+                .border_style(styles::border())
                 .style(Style::default().bg(colors::BG_MEDIUM)),
         )
-        .style(Style::default().fg(colors::TEXT));
+        .style(styles::text());
 
     frame.render_widget(paragraph, popup_area);
 }

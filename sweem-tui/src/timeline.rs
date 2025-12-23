@@ -2,35 +2,23 @@
 //!
 //! This module implements a custom horizontal Gantt chart widget
 //! that renders projects as colored bars on a time axis.
+//! Uses Kanagawa Dragon theme colors.
 
 use chrono::{Datelike, Duration, NaiveDate};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     widgets::{Block, Borders, Widget},
 };
 
 use crate::models::ProjectDto;
-
-/// Color palette for project bars (neon cyber theme)
-const PROJECT_COLORS: &[Color] = &[
-    Color::Rgb(0, 255, 255),   // Cyan
-    Color::Rgb(255, 0, 255),   // Magenta
-    Color::Rgb(0, 255, 128),   // Neon Green
-    Color::Rgb(255, 128, 0),   // Orange
-    Color::Rgb(128, 0, 255),   // Purple
-    Color::Rgb(255, 255, 0),   // Yellow
-    Color::Rgb(0, 128, 255),   // Blue
-    Color::Rgb(255, 64, 128),  // Pink
-];
+use crate::theme::{colors, styles, get_project_color};
 
 /// Unicode block characters for smooth rendering
 const BLOCK_FULL: char = '█';
 const BLOCK_LEFT: char = '▌';
 const BLOCK_RIGHT: char = '▐';
-const BLOCK_LIGHT: char = '░';
-const BLOCK_MEDIUM: char = '▒';
 
 /// Timeline widget state
 #[derive(Debug, Clone)]
@@ -135,18 +123,13 @@ impl<'a> TimelineWidget<'a> {
         Self {
             projects,
             state,
-            title: " Project Timeline Flux ",
+            title: " Project Timeline ",
         }
     }
 
     pub fn title(mut self, title: &'a str) -> Self {
         self.title = title;
         self
-    }
-
-    /// Get the color for a project based on its index
-    fn get_project_color(&self, index: usize) -> Color {
-        PROJECT_COLORS[index % PROJECT_COLORS.len()]
     }
 
     /// Calculate the timeline start date
@@ -156,15 +139,6 @@ impl<'a> TimelineWidget<'a> {
             .map(|p| p.start_date)
             .min()
             .unwrap_or_else(|| chrono::Local::now().date_naive() - Duration::days(30))
-    }
-
-    /// Calculate the timeline end date
-    fn calculate_timeline_end(&self) -> NaiveDate {
-        self.projects
-            .iter()
-            .map(|p| p.actual_end_date.unwrap_or(p.planned_end_date))
-            .max()
-            .unwrap_or_else(|| chrono::Local::now().date_naive() + Duration::days(30))
     }
 
     /// Convert a date to a column position
@@ -182,12 +156,9 @@ impl<'a> TimelineWidget<'a> {
 
     /// Render the time axis (header)
     fn render_time_axis(&self, area: Rect, buf: &mut Buffer, start: NaiveDate) {
-        let style = Style::default()
-            .fg(Color::Rgb(100, 100, 100))
-            .add_modifier(Modifier::DIM);
-
+        let style = styles::text_dim();
         let month_style = Style::default()
-            .fg(Color::Rgb(0, 255, 255))
+            .fg(colors::BLUE)
             .add_modifier(Modifier::BOLD);
 
         // Draw month markers
@@ -214,7 +185,7 @@ impl<'a> TimelineWidget<'a> {
         for col in 0..area.width {
             let pos = (area.x + col, area.y + 1);
             buf[pos].set_char('─');
-            buf[pos].set_style(Style::default().fg(Color::Rgb(50, 50, 50)));
+            buf[pos].set_style(Style::default().fg(colors::BORDER_DIM));
         }
     }
 
@@ -229,7 +200,7 @@ impl<'a> TimelineWidget<'a> {
         row: u16,
         is_selected: bool,
     ) {
-        let color = self.get_project_color(index);
+        let color = get_project_color(index);
         let name_width = 20.min(area.width.saturating_sub(1) as usize);
 
         // Render project name (left column)
@@ -242,7 +213,7 @@ impl<'a> TimelineWidget<'a> {
 
         let name_style = if is_selected {
             Style::default()
-                .fg(Color::Black)
+                .fg(colors::BG_DARK)
                 .bg(color)
                 .add_modifier(Modifier::BOLD)
         } else {
@@ -266,9 +237,9 @@ impl<'a> TimelineWidget<'a> {
 
         // Determine bar style based on project status
         let bar_style = if project.is_completed() {
-            Style::default().fg(Color::Rgb(0, 200, 100)) // Green for completed
+            Style::default().fg(colors::PROJECT_COMPLETED)
         } else if project.is_overdue() {
-            Style::default().fg(Color::Rgb(255, 50, 50)) // Red for overdue
+            Style::default().fg(colors::PROJECT_OVERDUE)
         } else {
             Style::default().fg(color)
         };
@@ -316,7 +287,7 @@ impl<'a> TimelineWidget<'a> {
             let pos = (bar_area_start + today_col, area.y + row);
             if buf[pos].symbol() == " " {
                 buf[pos].set_char('│');
-                buf[pos].set_style(Style::default().fg(Color::Rgb(255, 255, 0)));
+                buf[pos].set_style(Style::default().fg(colors::TODAY_MARKER));
             }
         }
     }
@@ -332,7 +303,7 @@ impl<'a> TimelineWidget<'a> {
                 let pos = (bar_area_start + today_col, area.y + row);
                 if buf[pos].symbol() == " " {
                     buf[pos].set_char('│');
-                    buf[pos].set_style(Style::default().fg(Color::Rgb(255, 255, 0)).add_modifier(Modifier::DIM));
+                    buf[pos].set_style(Style::default().fg(colors::TODAY_MARKER).add_modifier(Modifier::DIM));
                 }
             }
         }
@@ -344,9 +315,10 @@ impl Widget for TimelineWidget<'_> {
         // Draw the block border
         let block = Block::default()
             .title(self.title)
+            .title_style(styles::title_accent())
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Rgb(0, 200, 200)))
-            .style(Style::default().bg(Color::Rgb(10, 10, 20)));
+            .border_style(styles::border())
+            .style(Style::default().bg(colors::BG_DARK));
 
         let inner = block.inner(area);
         block.render(area, buf);
@@ -394,14 +366,14 @@ impl Widget for TimelineWidget<'_> {
                 area.x + 1,
                 area.y + area.height - 1,
                 "◀ h",
-                Style::default().fg(Color::Rgb(100, 100, 100)),
+                styles::text_hint(),
             );
         }
         buf.set_string(
             area.x + area.width - 4,
             area.y + area.height - 1,
             "l ▶",
-            Style::default().fg(Color::Rgb(100, 100, 100)),
+            styles::text_hint(),
         );
     }
 }
@@ -437,7 +409,7 @@ impl Widget for TimelineStatusWidget<'_> {
             area.x,
             area.y,
             &status,
-            Style::default().fg(Color::Rgb(150, 150, 150)),
+            styles::text_dim(),
         );
     }
 }
