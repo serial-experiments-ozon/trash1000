@@ -1,12 +1,11 @@
 //! Timeline widget for project visualization.
 //!
-//! This module implements a custom horizontal Gantt chart widget
-//! that renders projects as colored bars on a time axis.
-//! Features:
-//! - Rainbow-colored project bars for easy differentiation
-//! - Visual indicators for project status (completed, overdue)
-//! - Smooth block character rendering
-//! - Project legend with color mapping
+//! A completely rewritten, modern Gantt chart widget with:
+//! - Rainbow-colored project bars with gradient effects
+//! - Visual indicators for project status (completed, overdue, active)
+//! - Smooth block character rendering with sparkle effects
+//! - Animated elements and modern aesthetic
+//! - "Goyslop" killer feature: flashy visual effects
 
 #![allow(dead_code)]
 
@@ -27,11 +26,23 @@ const BLOCK_LEFT: char = '▌';
 const BLOCK_RIGHT: char = '▐';
 const BLOCK_TOP: char = '▀';
 const BLOCK_BOTTOM: char = '▄';
+const BLOCK_LIGHT: char = '░';
+const BLOCK_MEDIUM: char = '▒';
+const BLOCK_DARK: char = '▓';
 
 /// Status indicators for projects
 const STATUS_COMPLETED: char = '✓';
 const STATUS_OVERDUE: char = '!';
 const STATUS_ACTIVE: char = '●';
+const SPARKLE_CHARS: [char; 4] = ['✦', '✧', '⋆', '★'];
+
+/// Modern border characters
+const BORDER_TL: char = '╭';
+const BORDER_TR: char = '╮';
+const BORDER_BL: char = '╰';
+const BORDER_BR: char = '╯';
+const BORDER_H: char = '─';
+const BORDER_V: char = '│';
 
 /// Timeline widget state
 #[derive(Debug, Clone)]
@@ -42,6 +53,8 @@ pub struct TimelineState {
     pub selected_project: Option<usize>,
     /// Zoom level (days per column)
     pub days_per_column: f64,
+    /// Animation frame counter for effects
+    pub animation_frame: u64,
 }
 
 impl Default for TimelineState {
@@ -50,6 +63,7 @@ impl Default for TimelineState {
             scroll_offset: 0,
             selected_project: None,
             days_per_column: 1.0,
+            animation_frame: 0,
         }
     }
 }
@@ -128,8 +142,8 @@ impl TimelineState {
         let days_from_start = (project_mid - timeline_start).num_days();
 
         // Center the viewport on this point
-        // Account for the name column (about 24 chars) in the viewport
-        let effective_width = viewport_width.saturating_sub(24) as i64;
+        // Account for the name column (about 26 chars) in the viewport
+        let effective_width = viewport_width.saturating_sub(26) as i64;
         let center_offset = (effective_width / 2) * self.days_per_column as i64;
 
         self.scroll_offset = (days_from_start - center_offset).max(0);
@@ -143,9 +157,14 @@ impl TimelineState {
             .min()
             .unwrap_or_else(|| chrono::Local::now().date_naive() - Duration::days(30))
     }
+
+    /// Advance animation frame
+    pub fn tick(&mut self) {
+        self.animation_frame = self.animation_frame.wrapping_add(1);
+    }
 }
 
-/// Timeline widget for rendering the Gantt chart
+/// Modern timeline widget for rendering the Gantt chart
 pub struct TimelineWidget<'a> {
     projects: &'a [ProjectDto],
     state: &'a TimelineState,
@@ -157,7 +176,7 @@ impl<'a> TimelineWidget<'a> {
         Self {
             projects,
             state,
-            title: " Project Timeline ",
+            title: " ✨ Project Timeline ",
         }
     }
 
@@ -193,42 +212,55 @@ impl<'a> TimelineWidget<'a> {
         }
     }
 
-    /// Render the time axis (header)
+    /// Render the modern time axis (header)
     fn render_time_axis(&self, area: Rect, buf: &mut Buffer, start: NaiveDate) {
-        let style = styles::text_dim();
-        let month_style = Style::default()
-            .fg(colors::BLUE)
-            .add_modifier(Modifier::BOLD);
+        let today = chrono::Local::now().date_naive();
 
-        // Draw month markers
+        // Draw month markers and day numbers
         for col in 0..area.width {
             let days_offset = self.state.scroll_offset + (col as f64 * self.state.days_per_column) as i64;
             let date = start + Duration::days(days_offset);
 
             if date.day() == 1 {
-                // Month start - show month name
+                // Month start - show month name with modern styling
                 let month_name = date.format("%b").to_string();
+                let month_style = Style::default()
+                    .fg(colors::PURPLE)
+                    .add_modifier(Modifier::BOLD);
                 if col + month_name.len() as u16 <= area.width {
                     buf.set_string(area.x + col, area.y, &month_name, month_style);
                 }
             } else if date.day() % 7 == 0 && col > 0 {
-                // Weekly marker
+                // Weekly marker - subtle
                 let day_str = date.format("%d").to_string();
                 if col + 2 <= area.width {
-                    buf.set_string(area.x + col, area.y, &day_str, style);
+                    buf.set_string(area.x + col, area.y, &day_str, styles::text_dim());
                 }
             }
         }
 
-        // Draw axis line
+        // Draw modern axis line with gradient effect
         for col in 0..area.width {
             let pos = (area.x + col, area.y + 1);
-            buf[pos].set_char('─');
-            buf[pos].set_style(Style::default().fg(colors::BORDER_DIM));
+            let days_offset = self.state.scroll_offset + (col as f64 * self.state.days_per_column) as i64;
+            let date = start + Duration::days(days_offset);
+
+            // Special styling for today's column
+            let char_and_style = if date == today {
+                ('▼', Style::default().fg(colors::YELLOW).add_modifier(Modifier::BOLD))
+            } else if date.weekday().num_days_from_monday() >= 5 {
+                // Weekend - dimmer
+                ('┄', Style::default().fg(colors::BORDER_DIM))
+            } else {
+                ('─', Style::default().fg(colors::BORDER))
+            };
+
+            buf[pos].set_char(char_and_style.0);
+            buf[pos].set_style(char_and_style.1);
         }
     }
 
-    /// Render a single project bar with vibrant colors and visual polish
+    /// Render a single project bar with modern styling and goyslop effects
     fn render_project_bar(
         &self,
         area: Rect,
@@ -240,9 +272,9 @@ impl<'a> TimelineWidget<'a> {
         is_selected: bool,
     ) {
         let color = get_project_color(index);
-        let name_width = 22.min(area.width.saturating_sub(1) as usize);
+        let name_width = 24.min(area.width.saturating_sub(1) as usize);
 
-        // Status indicator
+        // Status indicator with animation for selected items
         let status_char = if project.is_completed() {
             STATUS_COMPLETED
         } else if project.is_overdue() {
@@ -259,19 +291,31 @@ impl<'a> TimelineWidget<'a> {
             color
         };
 
-        // Render color indicator block and status
-        let indicator_style = Style::default().fg(color);
-        buf.set_string(area.x, area.y + row, "█", indicator_style);
-        buf.set_string(area.x + 1, area.y + row, &status_char.to_string(),
-            Style::default().fg(status_color).add_modifier(Modifier::BOLD));
+        // Animated sparkle effect for selected row (goyslop!)
+        let sparkle_idx = (self.state.animation_frame / 4) as usize % SPARKLE_CHARS.len();
+        let prefix_char = if is_selected {
+            SPARKLE_CHARS[sparkle_idx]
+        } else {
+            '│'
+        };
+
+        // Render row prefix with color indicator
+        let prefix_style = Style::default().fg(if is_selected { colors::YELLOW } else { color });
+        buf.set_string(area.x, area.y + row, &prefix_char.to_string(), prefix_style);
+
+        // Status indicator
+        let status_style = Style::default()
+            .fg(status_color)
+            .add_modifier(if is_selected { Modifier::BOLD | Modifier::SLOW_BLINK } else { Modifier::BOLD });
+        buf.set_string(area.x + 1, area.y + row, &status_char.to_string(), status_style);
         buf.set_string(area.x + 2, area.y + row, " ", Style::default());
 
-        // Render project name (left column)
+        // Render project name (left column) with modern styling
         let name = project.display_name();
-        let display_name: String = if name.len() > name_width - 3 {
-            format!("{}…", &name[..name_width - 4])
+        let display_name: String = if name.len() > name_width - 4 {
+            format!("{}…", &name[..name_width - 5])
         } else {
-            format!("{:width$}", name, width = name_width - 3)
+            format!("{:width$}", name, width = name_width - 4)
         };
 
         let name_style = if is_selected {
@@ -293,7 +337,7 @@ impl<'a> TimelineWidget<'a> {
             return;
         }
 
-        // Draw the project bar
+        // Draw the project bar with gradient effect
         let project_end_date = project.actual_end_date.unwrap_or(project.planned_end_date);
 
         // Get raw column positions (can be negative or beyond width)
@@ -302,21 +346,18 @@ impl<'a> TimelineWidget<'a> {
 
         // Check if project is visible at all
         if end_col_raw < 0 || start_col_raw >= bar_area_width as i64 {
-            // Project is completely outside visible area
             return;
         }
 
         // Calculate visible portion of the bar
-        // IMPORTANT: Clamp to valid range BEFORE casting to u16 to avoid overflow
         let visible_start = start_col_raw.max(0).min(bar_area_width as i64 - 1) as u16;
         let visible_end = end_col_raw.max(0).min(bar_area_width as i64 - 1) as u16;
 
-        // Skip if no visible bar (can happen if start > end after clamping)
         if visible_end < visible_start {
             return;
         }
 
-        // Draw the bar with gradient-like effect
+        // Draw the bar with gradient-like effect (goyslop!)
         let bar_length = (visible_end - visible_start + 1).max(1);
 
         for col in visible_start..=visible_end {
@@ -331,31 +372,30 @@ impl<'a> TimelineWidget<'a> {
                 0.5
             };
 
-            // Create a subtle gradient by varying the character based on position
+            // Create gradient character based on position
             let bar_char = if is_start && !is_end {
                 BLOCK_LEFT
             } else if is_end && !is_start {
                 BLOCK_RIGHT
             } else if is_selected {
-                // Use top/bottom blocks for selected to make it more visible
-                if (col % 2) == 0 { BLOCK_FULL } else { BLOCK_FULL }
+                // Animated pattern for selected (goyslop!)
+                let anim_offset = (self.state.animation_frame / 2) as u16 % 4;
+                if (col + anim_offset) % 2 == 0 { BLOCK_FULL } else { BLOCK_DARK }
             } else {
-                // Regular bar with slight variation for visual interest
                 BLOCK_FULL
             };
 
-            // Color based on status and position
+            // Color based on status with gradient
             let bar_color = if project.is_completed() {
-                // Completed projects: green tint over project color
-                Self::blend_colors(color, colors::GREEN, 0.4)
+                Self::blend_colors(color, colors::GREEN, 0.4 + relative_pos * 0.2)
             } else if project.is_overdue() {
-                // Overdue projects: red tint that pulses
-                Self::blend_colors(color, colors::RED, 0.5)
+                // Pulsing red effect for overdue (goyslop!)
+                let pulse = ((self.state.animation_frame % 20) as f32 / 20.0 * std::f32::consts::PI).sin() * 0.3;
+                Self::blend_colors(color, colors::RED, 0.5 + pulse)
             } else {
-                // Active projects: use project color with subtle gradient
-                if relative_pos < 0.1 || relative_pos > 0.9 {
-                    // Slightly dimmer at edges for depth effect
-                    Self::dim_color(color, 0.8)
+                // Active projects: subtle gradient from left to right
+                if relative_pos < 0.15 || relative_pos > 0.85 {
+                    Self::dim_color(color, 0.7)
                 } else {
                     color
                 }
@@ -364,7 +404,7 @@ impl<'a> TimelineWidget<'a> {
             let bar_style = if is_selected {
                 Style::default()
                     .fg(bar_color)
-                    .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(bar_color)
             };
@@ -391,6 +431,7 @@ impl<'a> TimelineWidget<'a> {
         use ratatui::style::Color;
         match (c1, c2) {
             (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) => {
+                let ratio = ratio.clamp(0.0, 1.0);
                 let r = (r1 as f32 * (1.0 - ratio) + r2 as f32 * ratio) as u8;
                 let g = (g1 as f32 * (1.0 - ratio) + g2 as f32 * ratio) as u8;
                 let b = (b1 as f32 * (1.0 - ratio) + b2 as f32 * ratio) as u8;
@@ -415,7 +456,7 @@ impl<'a> TimelineWidget<'a> {
         }
     }
 
-    /// Render the "today" vertical line
+    /// Render the "today" vertical line with glow effect
     fn render_today_line(&self, area: Rect, buf: &mut Buffer, start: NaiveDate, name_width: u16) {
         let today = chrono::Local::now().date_naive();
         let bar_area_start = area.x + name_width + 2;
@@ -425,20 +466,56 @@ impl<'a> TimelineWidget<'a> {
             for row in 0..area.height {
                 let pos = (bar_area_start + today_col, area.y + row);
                 if buf[pos].symbol() == " " {
-                    buf[pos].set_char('│');
-                    buf[pos].set_style(Style::default().fg(colors::TODAY_MARKER).add_modifier(Modifier::DIM));
+                    // Animated glow effect for today line (goyslop!)
+                    let glow_char = if (row + self.state.animation_frame as u16 / 3) % 3 == 0 {
+                        '┃'
+                    } else {
+                        '│'
+                    };
+                    buf[pos].set_char(glow_char);
+                    buf[pos].set_style(Style::default()
+                        .fg(colors::TODAY_MARKER)
+                        .add_modifier(Modifier::DIM));
                 }
             }
+        }
+    }
+
+    /// Render the modern legend with icons
+    fn render_legend(&self, area: Rect, buf: &mut Buffer) {
+        let legend_y = area.y + area.height - 1;
+        let mut x = area.x + 6; // After scroll hint
+
+        // Status legend with modern icons
+        let legend_items = [
+            (STATUS_ACTIVE, "Active", colors::BLUE),
+            (STATUS_COMPLETED, "Done", colors::GREEN),
+            (STATUS_OVERDUE, "Overdue", colors::RED),
+            ('│', "Today", colors::YELLOW),
+        ];
+
+        for (icon, label, color) in legend_items {
+            if x + label.len() as u16 + 4 > area.x + area.width - 6 {
+                break;
+            }
+
+            buf.set_string(x, legend_y, &icon.to_string(),
+                Style::default().fg(color).add_modifier(Modifier::BOLD));
+            x += 1;
+            buf.set_string(x, legend_y, label, styles::text_hint());
+            x += label.len() as u16 + 2;
         }
     }
 }
 
 impl Widget for TimelineWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        // Draw the block border
+        // Draw the modern block border with rounded corners
         let block = Block::default()
             .title(self.title)
-            .title_style(styles::title_accent())
+            .title_style(Style::default()
+                .fg(colors::PURPLE)
+                .add_modifier(Modifier::BOLD))
             .borders(Borders::ALL)
             .border_style(styles::border())
             .style(Style::default().bg(colors::BG_DARK));
@@ -451,7 +528,7 @@ impl Widget for TimelineWidget<'_> {
         }
 
         let start = self.calculate_timeline_start();
-        let name_col_width: u16 = 24; // Color indicator (3) + name (19) + spacing (2)
+        let name_col_width: u16 = 26; // Color indicator (3) + name (21) + spacing (2)
 
         // Render time axis (top 2 rows)
         if inner.height >= 3 {
@@ -485,11 +562,11 @@ impl Widget for TimelineWidget<'_> {
         }
 
         // Render legend in bottom border
-        if self.projects.len() > 0 {
+        if !self.projects.is_empty() {
             self.render_legend(area, buf);
         }
 
-        // Render scroll hints
+        // Render navigation hints with modern styling
         if self.state.scroll_offset > 0 {
             buf.set_string(
                 area.x + 1,
@@ -507,34 +584,7 @@ impl Widget for TimelineWidget<'_> {
     }
 }
 
-impl<'a> TimelineWidget<'a> {
-    /// Render a color legend showing project status indicators
-    fn render_legend(&self, area: Rect, buf: &mut Buffer) {
-        let legend_y = area.y + area.height - 1;
-        let mut x = area.x + 6; // After scroll hint
-
-        // Status legend
-        let legend_items = [
-            (STATUS_ACTIVE, "Active", colors::BLUE),
-            (STATUS_COMPLETED, "Done", colors::GREEN),
-            (STATUS_OVERDUE, "Overdue", colors::RED),
-        ];
-
-        for (icon, label, color) in legend_items {
-            if x + label.len() as u16 + 4 > area.x + area.width - 6 {
-                break; // No more space
-            }
-
-            buf.set_string(x, legend_y, &icon.to_string(),
-                Style::default().fg(color).add_modifier(Modifier::BOLD));
-            x += 1;
-            buf.set_string(x, legend_y, label, styles::text_hint());
-            x += label.len() as u16 + 2;
-        }
-    }
-}
-
-/// Status information widget for the timeline
+/// Modern status information widget for the timeline
 pub struct TimelineStatusWidget<'a> {
     state: &'a TimelineState,
     project_count: usize,
@@ -551,21 +601,30 @@ impl<'a> TimelineStatusWidget<'a> {
 
 impl Widget for TimelineStatusWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let zoom_level = format!("Zoom: {:.1}d/col", self.state.days_per_column);
-        let project_info = format!("Projects: {}", self.project_count);
+        let zoom_level = format!("⚲ {:.1}d/col", self.state.days_per_column);
+        let project_info = format!("📊 {} projects", self.project_count);
         let selected_info = self
             .state
             .selected_project
-            .map(|i| format!("Selected: {}", i + 1))
-            .unwrap_or_else(|| "None selected".to_string());
+            .map(|i| format!("▸ #{}", i + 1))
+            .unwrap_or_else(|| "▸ none".to_string());
 
-        let status = format!("{} | {} | {}", project_info, selected_info, zoom_level);
+        let status = format!("{}  {}  {}", project_info, selected_info, zoom_level);
 
         buf.set_string(
             area.x,
             area.y,
             &status,
-            styles::text_dim(),
+            Style::default().fg(colors::FG_DIM),
+        );
+
+        // Add sparkle animation at the end (goyslop!)
+        let sparkle_idx = (self.state.animation_frame / 8) as usize % SPARKLE_CHARS.len();
+        buf.set_string(
+            area.x + status.len() as u16 + 2,
+            area.y,
+            &SPARKLE_CHARS[sparkle_idx].to_string(),
+            Style::default().fg(colors::PURPLE),
         );
     }
 }

@@ -1394,6 +1394,9 @@ impl App {
         // Update particles
         self.particle_system.update(width, height);
 
+        // Update timeline animations (goyslop effects!)
+        self.timeline_state.tick();
+
         // Auto-dismiss error popup
         if let Some(ref popup) = self.error_popup {
             if popup.should_dismiss() {
