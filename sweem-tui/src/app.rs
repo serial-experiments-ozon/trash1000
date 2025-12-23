@@ -385,17 +385,17 @@ impl FormState {
         self.dropdown_open = false;
     }
 
-    /// Get mutable reference to the current text field
+    /// Get mutable reference to the current text field (not date pickers or selectors)
     pub fn current_text_mut(&mut self) -> Option<&mut String> {
         match self.current_field() {
             FormField::ClientName => Some(&mut self.client_name),
             FormField::ClientAddress => Some(&mut self.client_address),
             FormField::ProjectName => Some(&mut self.project_name),
-            FormField::ProjectStartDate => Some(&mut self.project_start_date),
-            FormField::ProjectEndDate => Some(&mut self.project_end_date),
             FormField::UserName => Some(&mut self.user_name),
             FormField::UserLogin => Some(&mut self.user_login),
             FormField::UserPassword => Some(&mut self.user_password),
+            // Date picker fields - use arrow keys instead of text input
+            FormField::ProjectStartDate | FormField::ProjectEndDate => None,
             _ => None,
         }
     }
@@ -1356,12 +1356,9 @@ impl App {
             return;
         }
 
-        // Get the project to center on (selected or first)
-        let idx = self.timeline_state.selected_project.unwrap_or(0);
-        if let Some(project) = self.projects.get(idx) {
-            let viewport_width = 100u16;
-            self.timeline_state.jump_to_project(project, &self.projects, viewport_width);
-        }
+        // Reset scroll to beginning so projects are immediately visible
+        // The timeline calculates start from the earliest project, so scroll 0 = first project visible
+        self.timeline_state.scroll_offset = 0;
     }
 
     /// Handle list view key events
