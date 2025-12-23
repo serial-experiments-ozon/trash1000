@@ -303,10 +303,11 @@ fn render_form_modal(frame: &mut Frame, app: &App, area: Rect) {
     };
 
     // Determine form size based on type
+    // Heights calculated as: fields * 3 + spacer(1) + buttons(1) + margin(2) + borders(2)
     let (popup_width, popup_height) = match form.form_type {
         FormType::CreateClient | FormType::EditClient(_) => (50, 12),
-        FormType::CreateProject | FormType::EditProject(_) => (55, 18),
-        FormType::CreateUser | FormType::EditUser(_) => (50, 16),
+        FormType::CreateProject | FormType::EditProject(_) => (55, 22), // 5 fields
+        FormType::CreateUser | FormType::EditUser(_) => (50, 18), // 4 fields
     };
 
     let popup_area = centered_rect(popup_width, popup_height, area);
