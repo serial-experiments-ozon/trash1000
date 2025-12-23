@@ -14,11 +14,11 @@ use uuid::Uuid;
 
 use crate::api::{ApiCommand, ApiMessage, EntityType};
 use crate::models::{
-    ClientDto, CreateClientDto, CreateProjectDto, CreateUserDto, ProjectDto, Role,
-    UpdateClientDto, UpdateProjectDto, UpdateUserDto, UserDto,
+    ClientDto, CreateClientDto, CreateProjectDto, CreateUserDto, ProjectDto, Role, UpdateClientDto,
+    UpdateProjectDto, UpdateUserDto, UserDto,
 };
 use crate::particles::ParticleSystem;
-use crate::timeline::TimelineState;
+use crate::radar::RadarState;
 
 /// Active tab in the application
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -301,9 +301,19 @@ impl FormState {
     }
 
     /// Create an edit project form
-    pub fn new_edit_project(project: &ProjectDto, clients: &[ClientDto], users: &[UserDto]) -> Self {
-        let client_idx = clients.iter().position(|c| c.id == project.client_id).unwrap_or(0);
-        let manager_idx = users.iter().position(|u| u.id == project.manager_id).unwrap_or(0);
+    pub fn new_edit_project(
+        project: &ProjectDto,
+        clients: &[ClientDto],
+        users: &[UserDto],
+    ) -> Self {
+        let client_idx = clients
+            .iter()
+            .position(|c| c.id == project.client_id)
+            .unwrap_or(0);
+        let manager_idx = users
+            .iter()
+            .position(|u| u.id == project.manager_id)
+            .unwrap_or(0);
         Self {
             form_type: FormType::EditProject(project.id),
             focused_field: 0,
@@ -381,7 +391,10 @@ impl FormState {
 
     /// Move to the previous field
     pub fn prev_field(&mut self) {
-        self.focused_field = self.focused_field.checked_sub(1).unwrap_or(self.fields.len() - 1);
+        self.focused_field = self
+            .focused_field
+            .checked_sub(1)
+            .unwrap_or(self.fields.len() - 1);
         self.dropdown_open = false;
     }
 
@@ -418,7 +431,8 @@ impl FormState {
     pub fn increment_date(&mut self) {
         match self.current_field() {
             FormField::ProjectStartDate => {
-                self.project_start_date = Self::add_days_to_date_string(&self.project_start_date, 1);
+                self.project_start_date =
+                    Self::add_days_to_date_string(&self.project_start_date, 1);
             }
             FormField::ProjectEndDate => {
                 self.project_end_date = Self::add_days_to_date_string(&self.project_end_date, 1);
@@ -431,7 +445,8 @@ impl FormState {
     pub fn decrement_date(&mut self) {
         match self.current_field() {
             FormField::ProjectStartDate => {
-                self.project_start_date = Self::add_days_to_date_string(&self.project_start_date, -1);
+                self.project_start_date =
+                    Self::add_days_to_date_string(&self.project_start_date, -1);
             }
             FormField::ProjectEndDate => {
                 self.project_end_date = Self::add_days_to_date_string(&self.project_end_date, -1);
@@ -443,10 +458,17 @@ impl FormState {
     /// Add days to a date string in YYYY-MM-DD format
     fn add_days_to_date_string(date_str: &str, days: i64) -> String {
         NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-            .map(|d| (d + chrono::Duration::days(days)).format("%Y-%m-%d").to_string())
+            .map(|d| {
+                (d + chrono::Duration::days(days))
+                    .format("%Y-%m-%d")
+                    .to_string()
+            })
             .unwrap_or_else(|_| {
                 // If parsing fails, use today's date
-                chrono::Local::now().date_naive().format("%Y-%m-%d").to_string()
+                chrono::Local::now()
+                    .date_naive()
+                    .format("%Y-%m-%d")
+                    .to_string()
             })
     }
 
@@ -479,9 +501,19 @@ impl FormState {
     }
 
     /// Build CreateProjectDto from form state
-    pub fn build_create_project(&self, clients: &[ClientDto], users: &[UserDto]) -> CreateProjectDto {
-        let client_id = clients.get(self.project_client_idx).map(|c| c.id).unwrap_or(Uuid::nil());
-        let manager_id = users.get(self.project_manager_idx).map(|u| u.id).unwrap_or(Uuid::nil());
+    pub fn build_create_project(
+        &self,
+        clients: &[ClientDto],
+        users: &[UserDto],
+    ) -> CreateProjectDto {
+        let client_id = clients
+            .get(self.project_client_idx)
+            .map(|c| c.id)
+            .unwrap_or(Uuid::nil());
+        let manager_id = users
+            .get(self.project_manager_idx)
+            .map(|u| u.id)
+            .unwrap_or(Uuid::nil());
         let start_date = NaiveDate::parse_from_str(&self.project_start_date, "%Y-%m-%d")
             .unwrap_or_else(|_| chrono::Local::now().date_naive());
         let end_date = NaiveDate::parse_from_str(&self.project_end_date, "%Y-%m-%d")
@@ -498,9 +530,19 @@ impl FormState {
     }
 
     /// Build UpdateProjectDto from form state
-    pub fn build_update_project(&self, clients: &[ClientDto], users: &[UserDto]) -> UpdateProjectDto {
-        let client_id = clients.get(self.project_client_idx).map(|c| c.id).unwrap_or(Uuid::nil());
-        let manager_id = users.get(self.project_manager_idx).map(|u| u.id).unwrap_or(Uuid::nil());
+    pub fn build_update_project(
+        &self,
+        clients: &[ClientDto],
+        users: &[UserDto],
+    ) -> UpdateProjectDto {
+        let client_id = clients
+            .get(self.project_client_idx)
+            .map(|c| c.id)
+            .unwrap_or(Uuid::nil());
+        let manager_id = users
+            .get(self.project_manager_idx)
+            .map(|u| u.id)
+            .unwrap_or(Uuid::nil());
         let start_date = NaiveDate::parse_from_str(&self.project_start_date, "%Y-%m-%d")
             .unwrap_or_else(|_| chrono::Local::now().date_naive());
         let end_date = NaiveDate::parse_from_str(&self.project_end_date, "%Y-%m-%d")
@@ -560,7 +602,10 @@ impl ConfirmDialog {
     pub fn new_delete(entity_type: EntityType, entity_id: Uuid, name: &str) -> Self {
         Self {
             title: format!("Delete {}", entity_type),
-            message: format!("Are you sure you want to delete \"{}\"?\nThis action cannot be undone.", name),
+            message: format!(
+                "Are you sure you want to delete \"{}\"?\nThis action cannot be undone.",
+                name
+            ),
             entity_type,
             entity_id,
             yes_focused: false,
@@ -672,7 +717,7 @@ pub struct App {
     pub users: Vec<UserDto>,
 
     /// Timeline widget state
-    pub timeline_state: TimelineState,
+    pub radar_state: RadarState,
 
     /// Particle system for background animation
     pub particle_system: ParticleSystem,
@@ -726,7 +771,7 @@ impl App {
             projects: Vec::new(),
             clients: Vec::new(),
             users: Vec::new(),
-            timeline_state: TimelineState::default(),
+            radar_state: RadarState::default(),
             particle_system: ParticleSystem::default(),
             error_popup: None,
             form_state: None,
@@ -789,9 +834,13 @@ impl App {
                 }
             }
             Tab::Timeline => {
-                if let Some(idx) = self.timeline_state.selected_project {
+                if let Some(idx) = self.radar_state.selected_index {
                     if let Some(project) = self.projects.get(idx) {
-                        Some(FormState::new_edit_project(project, &self.clients, &self.users))
+                        Some(FormState::new_edit_project(
+                            project,
+                            &self.clients,
+                            &self.users,
+                        ))
                     } else {
                         None
                     }
@@ -829,7 +878,7 @@ impl App {
                 }
             }
             Tab::Timeline => {
-                if let Some(idx) = self.timeline_state.selected_project {
+                if let Some(idx) = self.radar_state.selected_index {
                     if let Some(project) = self.projects.get(idx) {
                         Some(ConfirmDialog::new_delete(
                             EntityType::Project,
@@ -885,13 +934,8 @@ impl App {
                 self.log(LogEntry::success(format!("Loaded {} projects", count)));
 
                 // Auto-center timeline on first project or today when projects are loaded
-                if !self.projects.is_empty() {
-                    // Select first project if none selected
-                    if self.timeline_state.selected_project.is_none() {
-                        self.timeline_state.selected_project = Some(0);
-                    }
-                    // Jump to show the selected (or first) project
-                    self.auto_center_timeline();
+                if !self.projects.is_empty() && self.radar_state.selected_index.is_none() {
+                    self.radar_state.selected_index = Some(0);
                 }
             }
             ApiMessage::ClientsLoaded(clients) => {
@@ -919,7 +963,11 @@ impl App {
                 }
             }
             ApiMessage::Created(entity_type, id) => {
-                self.log(LogEntry::success(format!("{} created ({})", entity_type, &id.to_string()[..8])));
+                self.log(LogEntry::success(format!(
+                    "{} created ({})",
+                    entity_type,
+                    &id.to_string()[..8]
+                )));
                 self.close_form();
             }
             ApiMessage::Updated(entity_type) => {
@@ -927,7 +975,11 @@ impl App {
                 self.close_form();
             }
             ApiMessage::Deleted(entity_type, id) => {
-                self.log(LogEntry::success(format!("{} deleted ({})", entity_type, &id.to_string()[..8])));
+                self.log(LogEntry::success(format!(
+                    "{} deleted ({})",
+                    entity_type,
+                    &id.to_string()[..8]
+                )));
                 self.close_confirm();
             }
         }
@@ -1272,7 +1324,10 @@ impl App {
                             EntityType::Project => ApiCommand::DeleteProject(dialog.entity_id),
                             EntityType::User => ApiCommand::DeleteUser(dialog.entity_id),
                         };
-                        self.log(LogEntry::info(format!("Deleting {}...", dialog.entity_type)));
+                        self.log(LogEntry::info(format!(
+                            "Deleting {}...",
+                            dialog.entity_type
+                        )));
                         return Some(cmd);
                     } else {
                         self.close_confirm();
@@ -1287,7 +1342,10 @@ impl App {
                         EntityType::Project => ApiCommand::DeleteProject(dialog.entity_id),
                         EntityType::User => ApiCommand::DeleteUser(dialog.entity_id),
                     };
-                    self.log(LogEntry::info(format!("Deleting {}...", dialog.entity_type)));
+                    self.log(LogEntry::info(format!(
+                        "Deleting {}...",
+                        dialog.entity_type
+                    )));
                     return Some(cmd);
                 }
                 return None;
@@ -1301,72 +1359,45 @@ impl App {
     /// Handle timeline-specific key events
     fn handle_timeline_key(&mut self, key: KeyEvent) {
         match key.code {
-            KeyCode::Char('h') | KeyCode::Left => {
-                let amount = if key.modifiers.contains(KeyModifiers::SHIFT) { 7 } else { 1 };
-                self.timeline_state.scroll_left(amount);
+            KeyCode::Char('j') | KeyCode::Down | KeyCode::Right => {
+                self.radar_state.select_next(self.projects.len());
             }
-            KeyCode::Char('l') | KeyCode::Right => {
-                let amount = if key.modifiers.contains(KeyModifiers::SHIFT) { 7 } else { 1 };
-                self.timeline_state.scroll_right(amount);
-            }
-            KeyCode::Char('j') | KeyCode::Down => {
-                self.timeline_state.select_next(self.projects.len());
-                // Auto-jump to selected project when navigating
-                self.jump_to_selected_project();
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.timeline_state.select_previous(self.projects.len());
-                // Auto-jump to selected project when navigating
-                self.jump_to_selected_project();
-            }
-            KeyCode::Enter => {
-                // Jump to center the selected project in the viewport
-                self.jump_to_selected_project();
+            KeyCode::Char('k') | KeyCode::Up | KeyCode::Left => {
+                self.radar_state.select_prev(self.projects.len());
             }
             KeyCode::Char('+') | KeyCode::Char('=') => {
-                self.timeline_state.zoom_in();
+                self.radar_state.zoom_in();
             }
             KeyCode::Char('-') => {
-                self.timeline_state.zoom_out();
-            }
-            KeyCode::Char('t') => {
-                self.timeline_state.center_on_today(&self.projects, 100); // Approximate width
-            }
-            KeyCode::Home => {
-                self.timeline_state.scroll_offset = 0;
+                self.radar_state.zoom_out();
             }
             _ => {}
         }
     }
 
-    /// Jump timeline viewport to show the currently selected project
+    // Обнови jump_to_selected_project
     fn jump_to_selected_project(&mut self) {
-        if let Some(idx) = self.timeline_state.selected_project {
+        if let Some(idx) = self.radar_state.selected_index {
             if let Some(project) = self.projects.get(idx) {
-                // Use approximate viewport width (adjust based on typical terminal width)
+                // Use approximate viewport width
                 let viewport_width = 100u16;
-                self.timeline_state.jump_to_project(project, &self.projects, viewport_width);
+                self.radar_state
+                    .jump_to_project(project, &self.projects, viewport_width);
             }
         }
     }
 
-    /// Auto-center the timeline on the selected project or first project
+    // Обнови auto_center_timeline
     fn auto_center_timeline(&mut self) {
         if self.projects.is_empty() {
-            // No projects - center on today
-            self.timeline_state.scroll_offset = 0;
+            self.radar_state.center_on_today(&self.projects, 100);
             return;
         }
 
-        // Find the currently selected project (or first one)
-        let idx = self.timeline_state.selected_project.unwrap_or(0);
+        let idx = self.radar_state.selected_index.unwrap_or(0);
         if let Some(project) = self.projects.get(idx) {
-            // Jump to show the selected project
-            let viewport_width = 100u16; // Approximate width
-            self.timeline_state.jump_to_project(project, &self.projects, viewport_width);
-        } else {
-            // Fallback: reset scroll to beginning so first project is visible
-            self.timeline_state.scroll_offset = 0;
+            self.radar_state
+                .jump_to_project(project, &self.projects, 100);
         }
     }
 
@@ -1401,7 +1432,7 @@ impl App {
         self.particle_system.update(width, height);
 
         // Update timeline animations (goyslop effects!)
-        self.timeline_state.tick();
+        self.radar_state.tick();
 
         // Auto-dismiss error popup
         if let Some(ref popup) = self.error_popup {

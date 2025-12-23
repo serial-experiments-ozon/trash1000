@@ -6,7 +6,7 @@
 
 #![allow(dead_code)]
 
-use chrono::NaiveDate;
+use chrono::{NaiveDate, Datelike};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -162,15 +162,27 @@ impl ProjectDto {
     }
 
     /// Check if project is completed
+    /// FIX: Ignore default C# dates (year < 2000)
     pub fn is_completed(&self) -> bool {
-        self.actual_end_date.is_some()
+        match self.actual_end_date {
+            Some(date) => date.year() > 2000, // Считаем завершенным только если год адекватный
+            None => false,
+        }
     }
 
-    /// Check if project is overdue (past planned end date but not completed)
+    /// Check if project hasn't started yet
+    pub fn is_pending(&self) -> bool {
+        if self.is_completed() { return false; }
+        let today = chrono::Local::now().date_naive();
+        self.start_date > today
+    }
+
+    /// Check if project is overdue
     pub fn is_overdue(&self) -> bool {
-        if self.is_completed() {
-            return false;
-        }
+        if self.is_completed() { return false; }
+        // Если проект еще не начался, он не может быть просроченным (даже если старт в будущем)
+        if self.is_pending() { return false; }
+        
         let today = chrono::Local::now().date_naive();
         today > self.planned_end_date
     }

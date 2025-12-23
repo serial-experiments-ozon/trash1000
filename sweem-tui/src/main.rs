@@ -8,7 +8,7 @@ mod app;
 mod models;
 mod particles;
 mod theme;
-mod timeline;
+mod radar;
 mod ui;
 
 use std::io::{self, stdout};

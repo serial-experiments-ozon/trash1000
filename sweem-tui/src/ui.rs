@@ -16,7 +16,7 @@ use crate::app::{App, FormField, FormState, FormType, LogLevel, Tab};
 use crate::models::Role;
 use crate::particles::ParticleWidget;
 use crate::theme::{colors, styles};
-use crate::timeline::{TimelineStatusWidget, TimelineWidget};
+use crate::radar::RadarWidget;
 
 /// Render the entire UI
 pub fn render(frame: &mut Frame, app: &App) {
@@ -106,20 +106,176 @@ fn render_main_content(frame: &mut Frame, app: &App, area: Rect) {
     }
 }
 
-/// Render the timeline view
 fn render_timeline_view(frame: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(5), Constraint::Length(1)])
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(65),
+            Constraint::Percentage(35),
+        ])
         .split(area);
 
-    // Render timeline
-    let timeline = TimelineWidget::new(&app.projects, &app.timeline_state);
-    frame.render_widget(timeline, chunks[0]);
+    // FIX: Pass clients to radar for labels
+    let radar = RadarWidget::new(&app.projects, &app.clients, &app.radar_state);
+    frame.render_widget(radar, chunks[0]);
 
-    // Render status
-    let status = TimelineStatusWidget::new(&app.timeline_state, app.projects.len());
-    frame.render_widget(status, chunks[1]);
+    render_project_details(frame, app, chunks[1]);
+}
+
+fn render_project_details(frame: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .title(" Target Analysis ")
+        .title_style(styles::title_accent())
+        .borders(Borders::ALL)
+        .border_style(styles::border())
+        .style(Style::default().bg(colors::BG_MEDIUM));
+    
+    let inner_area = block.inner(area);
+    frame.render_widget(block, area);
+
+    let project = match app.radar_state.selected_index {
+        Some(i) => app.projects.get(i),
+        None => None,
+    };
+
+    if let Some(p) = project {
+        let details_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(4), // Header
+                Constraint::Length(8), // Stats Grid
+                Constraint::Min(0),    // Relations
+            ])
+            .margin(1)
+            .split(inner_area);
+
+        // -- Header --
+        let mut text = vec![
+            Line::from(Span::styled(
+                p.display_name(), 
+                Style::default().fg(colors::FG_PRIMARY).add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+            )),
+            Line::from(Span::styled(
+                format!("UUID: {}", p.id), 
+                styles::text_dim()
+            )),
+        ];
+        frame.render_widget(Paragraph::new(text), details_chunks[0]);
+
+        // -- Metrics Calculation (FIXED) --
+        let today = chrono::Local::now().date_naive();
+        
+        // 1. Deadline Math: Always use planned_end_date for deadline countdown
+        let deadline_date = p.planned_end_date;
+        let days_until_deadline = (deadline_date - today).num_days();
+
+        // 2. Formatting Deadline with Sanity Check
+        let (deadline_str, deadline_style) = if deadline_date.year() < 2000 {
+            ("Not Set".to_string(), styles::text_dim())
+        } else if p.is_completed() {
+            ("Completed".to_string(), styles::success())
+        } else if days_until_deadline < 0 {
+            (format!("{} days OVERDUE", days_until_deadline.abs()), styles::error())
+        } else {
+            (format!("{} days left", days_until_deadline), styles::info())
+        };
+
+        // 3. Progress Math
+        // If completed, 100%. Else calculate time elapsed vs planned duration.
+        let total_duration = (p.planned_end_date - p.start_date).num_days().max(1);
+        let elapsed = (today - p.start_date).num_days().max(0);
+        let raw_pct = (elapsed as f64 / total_duration as f64).clamp(0.0, 1.0);
+        
+        let progress_pct = if p.is_completed() { 1.0 } else { raw_pct };
+        let progress_bar_width = 20 as usize;
+        let filled = (progress_pct * progress_bar_width as f64) as usize;
+        let empty = progress_bar_width.saturating_sub(filled);
+        let bar_str = format!("[{}{}]", "█".repeat(filled), "░".repeat(empty));
+
+        let status_text = if p.is_completed() { "DONE" } 
+                          else if p.is_overdue() { "LATE" } 
+                          else { "ACTIVE" };
+        
+        let status_color = if p.is_completed() { colors::GREEN }
+                           else if p.is_overdue() { colors::RED }
+                           else { colors::BLUE };
+
+        let total_duration = (p.planned_end_date - p.start_date).num_days().max(1);
+        let elapsed = (today - p.start_date).num_days().max(0);
+        
+        // Если проект будущий, прогресс 0%
+        let raw_pct = if p.is_pending() {
+            0.0
+        } else {
+            (elapsed as f64 / total_duration as f64).clamp(0.0, 1.0)
+        };
+        
+        let progress_pct = if p.is_completed() { 1.0 } else { raw_pct };
+        let progress_bar_width = 20usize;
+        let filled = (progress_pct * progress_bar_width as f64) as usize;
+        let empty = progress_bar_width.saturating_sub(filled);
+        let bar_str = format!("[{}{}]", "█".repeat(filled), "░".repeat(empty));
+
+        // Logic fix: Handle Pending state
+        let (status_text, status_color) = if p.is_completed() { 
+            ("DONE", colors::GREEN)
+        } else if p.is_overdue() { 
+            ("LATE", colors::RED)
+        } else if p.is_pending() {
+            ("PLANNED", colors::FG_DIM) // Новый статус
+        } else { 
+            ("ACTIVE", colors::BLUE)
+        };
+
+        let stats = vec![
+            Line::from(vec![
+                Span::raw("Status:   "),
+                Span::styled(status_text, Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from(vec![
+                Span::raw("Deadline: "),
+                Span::styled(deadline_str, deadline_style),
+            ]),
+            Line::from(vec![
+                 Span::raw("Progress: "),
+                 Span::styled(format!("{:.0}% ", progress_pct * 100.0), styles::text()),
+                 Span::styled(bar_str, Style::default().fg(status_color)),
+            ]),
+            Line::from(vec![
+                Span::raw("Start:    "),
+                Span::styled(p.start_date.format("%Y-%m-%d").to_string(), styles::text_hint()),
+            ]),
+            Line::from(vec![
+                Span::raw("Plan End: "),
+                Span::styled(p.planned_end_date.format("%Y-%m-%d").to_string(), styles::text_hint()),
+            ]),
+        ];
+        frame.render_widget(Paragraph::new(stats), details_chunks[1]);
+
+        // -- Relations --
+        let client_name = app.clients.iter().find(|c| c.id == p.client_id)
+            .map(|c| c.display_name()).unwrap_or("Unknown ID");
+        let manager_name = app.users.iter().find(|u| u.id == p.manager_id)
+            .map(|u| u.display_name()).unwrap_or("Unknown ID");
+
+        let relations = vec![
+            Line::from(Span::styled("Personnel & Client:", styles::title())),
+            Line::from(vec![Span::raw("  Client:  "), Span::styled(client_name, styles::info())]),
+            Line::from(vec![Span::raw("  Manager: "), Span::styled(manager_name, styles::info())]),
+        ];
+        frame.render_widget(Paragraph::new(relations), details_chunks[2]);
+
+    } else {
+        let msg = vec![
+            Line::from("Awaiting Selection..."),
+            Line::from(""),
+            Line::from(Span::styled("Use arrow keys to acquire target", styles::text_dim())),
+        ];
+        frame.render_widget(
+            Paragraph::new(msg).alignment(Alignment::Center), 
+            Layout::default().direction(Direction::Vertical).constraints([Constraint::Percentage(50), Constraint::Min(1)]).split(inner_area)[1]
+        );
+    }
 }
 
 /// Render the clients list view
