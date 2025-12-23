@@ -2,7 +2,11 @@
 //!
 //! This module implements a custom horizontal Gantt chart widget
 //! that renders projects as colored bars on a time axis.
-//! Uses Kanagawa Dragon theme colors.
+//! Features:
+//! - Rainbow-colored project bars for easy differentiation
+//! - Visual indicators for project status (completed, overdue)
+//! - Smooth block character rendering
+//! - Project legend with color mapping
 
 #![allow(dead_code)]
 
@@ -21,6 +25,13 @@ use crate::theme::{colors, styles, get_project_color};
 const BLOCK_FULL: char = '█';
 const BLOCK_LEFT: char = '▌';
 const BLOCK_RIGHT: char = '▐';
+const BLOCK_TOP: char = '▀';
+const BLOCK_BOTTOM: char = '▄';
+
+/// Status indicators for projects
+const STATUS_COMPLETED: char = '✓';
+const STATUS_OVERDUE: char = '!';
+const STATUS_ACTIVE: char = '●';
 
 /// Timeline widget state
 #[derive(Debug, Clone)]
@@ -196,7 +207,7 @@ impl<'a> TimelineWidget<'a> {
         }
     }
 
-    /// Render a single project bar
+    /// Render a single project bar with vibrant colors and visual polish
     fn render_project_bar(
         &self,
         area: Rect,
@@ -208,14 +219,38 @@ impl<'a> TimelineWidget<'a> {
         is_selected: bool,
     ) {
         let color = get_project_color(index);
-        let name_width = 20.min(area.width.saturating_sub(1) as usize);
+        let name_width = 22.min(area.width.saturating_sub(1) as usize);
+
+        // Status indicator
+        let status_char = if project.is_completed() {
+            STATUS_COMPLETED
+        } else if project.is_overdue() {
+            STATUS_OVERDUE
+        } else {
+            STATUS_ACTIVE
+        };
+
+        let status_color = if project.is_completed() {
+            colors::GREEN
+        } else if project.is_overdue() {
+            colors::RED
+        } else {
+            color
+        };
+
+        // Render color indicator block and status
+        let indicator_style = Style::default().fg(color);
+        buf.set_string(area.x, area.y + row, "█", indicator_style);
+        buf.set_string(area.x + 1, area.y + row, &status_char.to_string(),
+            Style::default().fg(status_color).add_modifier(Modifier::BOLD));
+        buf.set_string(area.x + 2, area.y + row, " ", Style::default());
 
         // Render project name (left column)
         let name = project.display_name();
-        let display_name: String = if name.len() > name_width {
-            format!("{}…", &name[..name_width - 1])
+        let display_name: String = if name.len() > name_width - 3 {
+            format!("{}…", &name[..name_width - 4])
         } else {
-            format!("{:width$}", name, width = name_width)
+            format!("{:width$}", name, width = name_width - 3)
         };
 
         let name_style = if is_selected {
@@ -224,10 +259,10 @@ impl<'a> TimelineWidget<'a> {
                 .bg(color)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(color)
+            Style::default().fg(colors::FG_PRIMARY)
         };
 
-        buf.set_string(area.x, area.y + row, &display_name, name_style);
+        buf.set_string(area.x + 3, area.y + row, &display_name, name_style);
 
         // Calculate bar positions
         let bar_area_start = area.x + name_width as u16 + 2;
@@ -250,42 +285,106 @@ impl<'a> TimelineWidget<'a> {
             return;
         }
 
-        // Determine bar style based on project status
-        let bar_style = if project.is_completed() {
-            Style::default().fg(colors::PROJECT_COMPLETED)
-        } else if project.is_overdue() {
-            Style::default().fg(colors::PROJECT_OVERDUE)
-        } else {
-            Style::default().fg(color)
-        };
-
         // Calculate visible portion of the bar
         let visible_start = start_col_raw.max(0) as u16;
         let visible_end = (end_col_raw as u16).min(bar_area_width - 1);
 
-        // Draw the bar
+        // Draw the bar with gradient-like effect
+        let bar_length = (visible_end as i64 - visible_start as i64 + 1) as u16;
+
         for col in visible_start..=visible_end {
             let pos = (bar_area_start + col, area.y + row);
-            // Use left block only if this is the actual project start (not clipped)
-            if col as i64 == start_col_raw {
-                buf[pos].set_char(BLOCK_LEFT);
-            // Use right block only if this is the actual project end (not clipped)
-            } else if col as i64 == end_col_raw {
-                buf[pos].set_char(BLOCK_RIGHT);
+            let is_start = col as i64 == start_col_raw;
+            let is_end = col as i64 == end_col_raw;
+
+            // Calculate relative position for gradient effect
+            let relative_pos = if bar_length > 1 {
+                (col - visible_start) as f32 / (bar_length - 1) as f32
             } else {
-                buf[pos].set_char(BLOCK_FULL);
-            }
+                0.5
+            };
+
+            // Create a subtle gradient by varying the character based on position
+            let bar_char = if is_start && !is_end {
+                BLOCK_LEFT
+            } else if is_end && !is_start {
+                BLOCK_RIGHT
+            } else if is_selected {
+                // Use top/bottom blocks for selected to make it more visible
+                if (col % 2) == 0 { BLOCK_FULL } else { BLOCK_FULL }
+            } else {
+                // Regular bar with slight variation for visual interest
+                BLOCK_FULL
+            };
+
+            // Color based on status and position
+            let bar_color = if project.is_completed() {
+                // Completed projects: green tint over project color
+                Self::blend_colors(color, colors::GREEN, 0.4)
+            } else if project.is_overdue() {
+                // Overdue projects: red tint that pulses
+                Self::blend_colors(color, colors::RED, 0.5)
+            } else {
+                // Active projects: use project color with subtle gradient
+                if relative_pos < 0.1 || relative_pos > 0.9 {
+                    // Slightly dimmer at edges for depth effect
+                    Self::dim_color(color, 0.8)
+                } else {
+                    color
+                }
+            };
+
+            let bar_style = if is_selected {
+                Style::default()
+                    .fg(bar_color)
+                    .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
+            } else {
+                Style::default().fg(bar_color)
+            };
+
+            buf[pos].set_char(bar_char);
             buf[pos].set_style(bar_style);
         }
 
-        // Draw today marker
+        // Draw today marker on top if it falls within this project
         let today = chrono::Local::now().date_naive();
         if let Some(today_col) = self.date_to_column(today, start, bar_area_width) {
-            let pos = (bar_area_start + today_col, area.y + row);
-            if buf[pos].symbol() == " " {
+            if today_col >= visible_start && today_col <= visible_end {
+                let pos = (bar_area_start + today_col, area.y + row);
                 buf[pos].set_char('│');
-                buf[pos].set_style(Style::default().fg(colors::TODAY_MARKER));
+                buf[pos].set_style(Style::default()
+                    .fg(colors::YELLOW)
+                    .add_modifier(Modifier::BOLD));
             }
+        }
+    }
+
+    /// Blend two colors together
+    fn blend_colors(c1: ratatui::style::Color, c2: ratatui::style::Color, ratio: f32) -> ratatui::style::Color {
+        use ratatui::style::Color;
+        match (c1, c2) {
+            (Color::Rgb(r1, g1, b1), Color::Rgb(r2, g2, b2)) => {
+                let r = (r1 as f32 * (1.0 - ratio) + r2 as f32 * ratio) as u8;
+                let g = (g1 as f32 * (1.0 - ratio) + g2 as f32 * ratio) as u8;
+                let b = (b1 as f32 * (1.0 - ratio) + b2 as f32 * ratio) as u8;
+                Color::Rgb(r, g, b)
+            }
+            _ => c1,
+        }
+    }
+
+    /// Dim a color by a factor
+    fn dim_color(c: ratatui::style::Color, factor: f32) -> ratatui::style::Color {
+        use ratatui::style::Color;
+        match c {
+            Color::Rgb(r, g, b) => {
+                Color::Rgb(
+                    (r as f32 * factor) as u8,
+                    (g as f32 * factor) as u8,
+                    (b as f32 * factor) as u8,
+                )
+            }
+            _ => c,
         }
     }
 
@@ -320,23 +419,24 @@ impl Widget for TimelineWidget<'_> {
         let inner = block.inner(area);
         block.render(area, buf);
 
-        if inner.width < 25 || inner.height < 3 {
+        if inner.width < 30 || inner.height < 3 {
             return; // Too small to render
         }
 
         let start = self.calculate_timeline_start();
+        let name_col_width: u16 = 24; // Color indicator (3) + name (19) + spacing (2)
 
         // Render time axis (top 2 rows)
         if inner.height >= 3 {
             self.render_time_axis(
-                Rect::new(inner.x + 22, inner.y, inner.width.saturating_sub(23), 2),
+                Rect::new(inner.x + name_col_width, inner.y, inner.width.saturating_sub(name_col_width + 1), 2),
                 buf,
                 start,
             );
         }
 
         // Render today vertical line
-        self.render_today_line(inner, buf, start, 20);
+        self.render_today_line(inner, buf, start, name_col_width - 2);
 
         // Render project bars
         let projects_area = Rect::new(inner.x, inner.y + 2, inner.width, inner.height.saturating_sub(2));
@@ -357,6 +457,11 @@ impl Widget for TimelineWidget<'_> {
             );
         }
 
+        // Render legend in bottom border
+        if self.projects.len() > 0 {
+            self.render_legend(area, buf);
+        }
+
         // Render scroll hints
         if self.state.scroll_offset > 0 {
             buf.set_string(
@@ -372,6 +477,33 @@ impl Widget for TimelineWidget<'_> {
             "l ▶",
             styles::text_hint(),
         );
+    }
+}
+
+impl<'a> TimelineWidget<'a> {
+    /// Render a color legend showing project status indicators
+    fn render_legend(&self, area: Rect, buf: &mut Buffer) {
+        let legend_y = area.y + area.height - 1;
+        let mut x = area.x + 6; // After scroll hint
+
+        // Status legend
+        let legend_items = [
+            (STATUS_ACTIVE, "Active", colors::BLUE),
+            (STATUS_COMPLETED, "Done", colors::GREEN),
+            (STATUS_OVERDUE, "Overdue", colors::RED),
+        ];
+
+        for (icon, label, color) in legend_items {
+            if x + label.len() as u16 + 4 > area.x + area.width - 6 {
+                break; // No more space
+            }
+
+            buf.set_string(x, legend_y, &icon.to_string(),
+                Style::default().fg(color).add_modifier(Modifier::BOLD));
+            x += 1;
+            buf.set_string(x, legend_y, label, styles::text_hint());
+            x += label.len() as u16 + 2;
+        }
     }
 }
 

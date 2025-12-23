@@ -85,17 +85,32 @@ pub mod colors {
 }
 
 /// Color palette for project bars in the timeline
-/// Warm, muted tones matching the Kanagawa Dragon aesthetic
+/// Vibrant, distinct colors for easy project differentiation
+/// Uses a rainbow-like progression for maximum visual clarity
 pub const PROJECT_COLORS: &[Color] = &[
-    colors::BLUE,       // Primary blue
-    colors::GREEN,      // Dragon green
-    colors::YELLOW,     // Carp yellow
-    colors::PURPLE,     // Purple accent
-    colors::ORANGE,     // Warm orange
-    colors::MAGENTA,    // Soft magenta
-    colors::BLUE_LIGHT, // Light blue
-    colors::RED,        // Dragon red (for last resort)
+    Color::Rgb(0x7A, 0xA2, 0xF7), // Bright blue - Project 1
+    Color::Rgb(0x9E, 0xCE, 0x6A), // Bright green - Project 2
+    Color::Rgb(0xE0, 0xAF, 0x68), // Golden yellow - Project 3
+    Color::Rgb(0xBB, 0x9A, 0xF7), // Bright purple - Project 4
+    Color::Rgb(0xFF, 0x9E, 0x64), // Bright orange - Project 5
+    Color::Rgb(0xF7, 0x76, 0x8E), // Pink/magenta - Project 6
+    Color::Rgb(0x73, 0xDA, 0xCA), // Cyan/teal - Project 7
+    Color::Rgb(0xFF, 0x75, 0x7F), // Coral red - Project 8
+    Color::Rgb(0xC0, 0xCA, 0xF5), // Lavender - Project 9
+    Color::Rgb(0xA9, 0xDC, 0x76), // Lime green - Project 10
+    Color::Rgb(0xF2, 0xCD, 0xCD), // Light pink - Project 11
+    Color::Rgb(0x89, 0xDD, 0xFF), // Sky blue - Project 12
 ];
+
+/// Get a dimmed version of a project color (for secondary elements)
+pub fn get_project_color_dim(index: usize) -> Color {
+    let base = PROJECT_COLORS[index % PROJECT_COLORS.len()];
+    if let Color::Rgb(r, g, b) = base {
+        Color::Rgb(r / 2, g / 2, b / 2)
+    } else {
+        base
+    }
+}
 
 /// Semantic styling helpers
 pub mod styles {
