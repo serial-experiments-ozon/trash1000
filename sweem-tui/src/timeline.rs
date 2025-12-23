@@ -119,11 +119,13 @@ impl TimelineState {
     }
 
     /// Center the timeline on today
-    pub fn center_on_today(&mut self, width: u16) {
+    pub fn center_on_today(&mut self, projects: &[ProjectDto], width: u16) {
         let today = chrono::Local::now().date_naive();
-        let start = self.calculate_timeline_start(&[]);
+        let start = self.calculate_timeline_start(projects);
         let days_from_start = (today - start).num_days();
-        let center_offset = (width as i64 / 2) * self.days_per_column as i64;
+        // Account for name column width (~26 chars) in viewport calculation
+        let effective_width = width.saturating_sub(26) as i64;
+        let center_offset = (effective_width / 2) * self.days_per_column as i64;
         self.scroll_offset = (days_from_start - center_offset).max(0);
     }
 

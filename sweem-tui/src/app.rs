@@ -1330,7 +1330,7 @@ impl App {
                 self.timeline_state.zoom_out();
             }
             KeyCode::Char('t') => {
-                self.timeline_state.center_on_today(80); // Approximate width
+                self.timeline_state.center_on_today(&self.projects, 100); // Approximate width
             }
             KeyCode::Home => {
                 self.timeline_state.scroll_offset = 0;
@@ -1353,12 +1353,21 @@ impl App {
     /// Auto-center the timeline on the selected project or first project
     fn auto_center_timeline(&mut self) {
         if self.projects.is_empty() {
+            // No projects - center on today
+            self.timeline_state.scroll_offset = 0;
             return;
         }
 
-        // Reset scroll to beginning so projects are immediately visible
-        // The timeline calculates start from the earliest project, so scroll 0 = first project visible
-        self.timeline_state.scroll_offset = 0;
+        // Find the currently selected project (or first one)
+        let idx = self.timeline_state.selected_project.unwrap_or(0);
+        if let Some(project) = self.projects.get(idx) {
+            // Jump to show the selected project
+            let viewport_width = 100u16; // Approximate width
+            self.timeline_state.jump_to_project(project, &self.projects, viewport_width);
+        } else {
+            // Fallback: reset scroll to beginning so first project is visible
+            self.timeline_state.scroll_offset = 0;
+        }
     }
 
     /// Handle list view key events
