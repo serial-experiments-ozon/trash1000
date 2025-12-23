@@ -34,7 +34,6 @@ const BLOCK_DARK: char = '▓';
 const STATUS_COMPLETED: char = '✓';
 const STATUS_OVERDUE: char = '!';
 const STATUS_ACTIVE: char = '●';
-const SPARKLE_CHARS: [char; 4] = ['✦', '✧', '⋆', '★'];
 
 /// Modern border characters
 const BORDER_TL: char = '╭';
@@ -173,7 +172,7 @@ impl<'a> TimelineWidget<'a> {
         Self {
             projects,
             state,
-            title: " ✨ Project Timeline ",
+            title: " Project Timeline ",
         }
     }
 
@@ -287,18 +286,6 @@ impl<'a> TimelineWidget<'a> {
         } else {
             color
         };
-
-        // Animated sparkle effect for selected row (goyslop!)
-        let sparkle_idx = (self.state.animation_frame / 4) as usize % SPARKLE_CHARS.len();
-        let prefix_char = if is_selected {
-            SPARKLE_CHARS[sparkle_idx]
-        } else {
-            '│'
-        };
-
-        // Render row prefix with color indicator
-        let prefix_style = Style::default().fg(if is_selected { colors::YELLOW } else { color });
-        buf.set_string(area.x, area.y + row, &prefix_char.to_string(), prefix_style);
 
         // Status indicator
         let status_style = Style::default()
@@ -599,7 +586,7 @@ impl<'a> TimelineStatusWidget<'a> {
 impl Widget for TimelineStatusWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let zoom_level = format!("⚲ {:.1}d/col", self.state.days_per_column);
-        let project_info = format!("📊 {} projects", self.project_count);
+        let project_info = format!("{} projects", self.project_count);
         let selected_info = self
             .state
             .selected_project
@@ -613,15 +600,6 @@ impl Widget for TimelineStatusWidget<'_> {
             area.y,
             &status,
             Style::default().fg(colors::FG_DIM),
-        );
-
-        // Add sparkle animation at the end (goyslop!)
-        let sparkle_idx = (self.state.animation_frame / 8) as usize % SPARKLE_CHARS.len();
-        buf.set_string(
-            area.x + status.len() as u16 + 2,
-            area.y,
-            &SPARKLE_CHARS[sparkle_idx].to_string(),
-            Style::default().fg(colors::PURPLE),
         );
     }
 }
