@@ -139,20 +139,47 @@ fn render_clients_view(frame: &mut Frame, app: &App, area: Rect) {
                 styles::text()
             };
 
+            // Calculate project counts from actual projects data
+            let (completed, total) = calculate_client_project_counts(&app.projects, client.id);
+
+            // Create a visual progress bar for projects
+            let progress_bar = if total > 0 {
+                let filled = (completed * 5 / total).min(5) as usize;
+                let empty = 5 - filled;
+                format!("[{}{}]", "█".repeat(filled), "░".repeat(empty))
+            } else {
+                "[░░░░░]".to_string()
+            };
+
+            // Choose color based on completion
+            let progress_style = if is_selected {
+                style
+            } else if total == 0 {
+                styles::text_dim()
+            } else if completed == total {
+                styles::success()
+            } else if completed as f32 / total as f32 >= 0.5 {
+                Style::default().fg(colors::YELLOW)
+            } else {
+                Style::default().fg(colors::ORANGE)
+            };
+
             let content = Line::from(vec![
                 Span::styled(
                     format!("{:20}", client.display_name()),
                     style,
                 ),
-                Span::styled(" | ", styles::border_dim()),
+                Span::styled(" │ ", styles::border_dim()),
                 Span::styled(
                     format!("{:30}", client.address.as_deref().unwrap_or("-")),
                     if is_selected { style } else { styles::text_dim() },
                 ),
-                Span::styled(" | ", styles::border_dim()),
+                Span::styled(" │ ", styles::border_dim()),
+                Span::styled(progress_bar, progress_style),
+                Span::styled(" ", Style::default()),
                 Span::styled(
-                    format!("Projects: {}/{}", client.projects_completed, client.projects_total),
-                    if is_selected { style } else { styles::success() },
+                    format!("{}/{}", completed, total),
+                    progress_style,
                 ),
             ]);
 
@@ -1097,4 +1124,12 @@ fn render_mini_calendar(frame: &mut Frame, date_str: &str, screen_area: Rect, fo
         );
 
     frame.render_widget(calendar, cal_area);
+}
+
+/// Calculate the number of projects (completed/total) for a client
+fn calculate_client_project_counts(projects: &[crate::models::ProjectDto], client_id: uuid::Uuid) -> (i32, i32) {
+    let client_projects: Vec<_> = projects.iter().filter(|p| p.client_id == client_id).collect();
+    let total = client_projects.len() as i32;
+    let completed = client_projects.iter().filter(|p| p.is_completed()).count() as i32;
+    (completed, total)
 }
