@@ -14,6 +14,7 @@ public class ProjectService(AppDbContext dbContext) : IProjectService
     public async Task<Guid> CreateAsync(CreateProjectDto dto, CancellationToken cancellationToken = default)
     {
         var project = dto.ToProject();
+        
         dbContext.Projects.Add(project);
         await dbContext.SaveChangesAsync(cancellationToken);
         return project.Id;
