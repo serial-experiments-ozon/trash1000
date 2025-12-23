@@ -125,24 +125,26 @@ impl TimelineState {
         let days_from_start = (today - start).num_days();
         // Account for name column width (~26 chars) in viewport calculation
         let effective_width = width.saturating_sub(26) as i64;
-        let center_offset = (effective_width / 2) * self.days_per_column as i64;
-        self.scroll_offset = (days_from_start - center_offset).max(0);
+        // center_offset is in columns, convert to days by multiplying by days_per_column
+        let center_offset_days = (effective_width / 2) as f64 * self.days_per_column;
+        self.scroll_offset = (days_from_start - center_offset_days as i64).max(0);
     }
 
     /// Jump to and center on a specific project
     pub fn jump_to_project(&mut self, project: &ProjectDto, projects: &[ProjectDto], viewport_width: u16) {
         let timeline_start = self.calculate_timeline_start(projects);
 
-        // Calculate the start of the project (we want to see the project start, not the middle)
+        // Calculate the start of the project in days from timeline start
         let project_start_days = (project.start_date - timeline_start).num_days();
 
-        // Account for the name column (about 24 chars) in the viewport
+        // Account for the name column (about 26 chars) in the viewport
         let effective_width = viewport_width.saturating_sub(26) as i64;
 
         // Position the project start at about 1/4 from the left of the viewport
         // This ensures the full project bar is visible
-        let offset_from_left = effective_width / 4;
-        let target_scroll = (project_start_days as f64 / self.days_per_column) as i64 - offset_from_left;
+        // offset_from_left is in columns, convert to days by multiplying by days_per_column
+        let offset_from_left_days = (effective_width / 4) as f64 * self.days_per_column;
+        let target_scroll = project_start_days - offset_from_left_days as i64;
 
         self.scroll_offset = target_scroll.max(0);
     }
